@@ -127,7 +127,10 @@ class ConnectionPanel(QGroupBox):
         layout.addWidget(self.status_label)
 
     def _toggle_collapse(self):
-        self._collapsed = not self._collapsed
+        self.set_collapsed(not self._collapsed)
+
+    def set_collapsed(self, collapsed: bool):
+        self._collapsed = collapsed
         self._content.setVisible(not self._collapsed)
         if self._collapsed:
             self._toggle_btn.setArrowType(Qt.UpArrow)
@@ -159,6 +162,7 @@ class ConnectionPanel(QGroupBox):
         else:
             self.status_label.setStyleSheet("color: #888; font-weight: bold;")
             self.status_label.setText(I18N.connection_panel["status_disconnected"])
+        self.set_collapsed(connected)
 
     def set_error(self, message: str):
         self.status_label.setStyleSheet("color: #d32f2f; font-weight: bold;")
