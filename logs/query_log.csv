@@ -1,0 +1,64 @@
+timestamp,server,database,sql,success,rows_affected,duration_ms
+2026-06-17T23:24:08.304718,"192.168.11.247, 1433",ERPMIRA,select * from lancamento_contabil,True,2166288,22381
+2026-06-17T23:32:15.221920,"192.168.11.247, 1433",ERPMIRA,select * from lancamento_contabil where exercicio >= 2025,True,0,221
+2026-06-17T23:37:49.206205,"192.168.11.247, 1433",ERPMIRA,select * from lancamento_contabil where exercicio >= 2025,True,0,209
+2026-06-17T23:46:06.374307,"192.168.11.247, 1433",ERPMIRA,select * from lancamento_contabil where exercicio >= 2025,True,0,88
+2026-06-18T00:30:22.152069,"192.168.11.247, 1433",ERPMIRA,select count(num_lancto) from lancamento_contabil where exercicio >= 2025,True,1,102
+2026-06-18T00:30:39.086239,"192.168.11.247, 1433",ERPMIRA,select count(num_lancto) --delete from lancamento_contabil where exercicio >= 2025,True,1,86
+2026-06-18T00:30:47.505321,"192.168.11.247, 1433",ERPMIRA,select count(num_lancto) --delete from lancamento_contabil where exercicio >= 2025,True,1,88
+2026-06-18T00:30:52.342415,"192.168.11.247, 1433",ERPMIRA,select count(num_lancto) --delete from lancamento_contabil where exercicio >= 2025,True,1,84
+2026-06-18T00:31:05.051814,"192.168.11.247, 1433",ERPMIRA,select count(num_lancto) --delete from lancamento_contabil where exercicio >= 2025,True,1,112
+2026-06-18T00:31:07.351199,"192.168.11.247, 1433",ERPMIRA,select count(num_lancto) --delete from lancamento_contabil where exercicio >= 2025,True,1,103
+2026-06-18T00:31:08.598700,"192.168.11.247, 1433",ERPMIRA,select count(num_lancto) --delete from lancamento_contabil where exercicio >= 2025,True,1,102
+2026-06-18T00:31:09.044979,"192.168.11.247, 1433",ERPMIRA,select count(num_lancto) --delete from lancamento_contabil where exercicio >= 2025,True,1,112
+2026-06-18T00:31:23.572279,"192.168.11.247, 1433",ERPMIRA,select count(num_lancto) from lancamento_contabil where exercicio >= 2025 --delete from lancamento_contabil where exercicio >= 2025,True,1,95
+2026-06-18T00:31:52.091345,"192.168.11.247, 1433",ERPMIRA,select count(num_lancto) from lancamento_contabil where exercicio >= 2025 --delete from lancamento_contabil where exercicio > 2024,True,1,107
+2026-06-18T00:32:12.354996,"192.168.11.247, 1433",ERPMIRA,select *from lancamento_contabil where exercicio > 2024  --delete from lancamento_contabil where exercicio > 2024,True,12000,388
+2026-06-18T00:33:01.268320,"192.168.11.247, 1433",ERPMIRA,select *from lancamento_contabil where exercicio > 2024  --delete from lancamento_contabil where exercicio >= 2025.0,True,12000,396
+2026-06-18T00:33:16.951953,"192.168.11.247, 1433",ERPMIRA,select * from lancamento_contabil where exercicio >= 2025.0  --delete from lancamento_contabil where exercicio >= 2025.0,True,12000,512
+2026-06-18T00:34:01.024316,"192.168.11.247, 1433",ERPMIRA,select * from lancamento_contabil where exercicio >= 2025.0  --delete from lancamento_contabil where exercicio >= 2025.0 and num_lancto > 0,True,12000,371
+2026-06-18T00:34:06.672793,"192.168.11.247, 1433",ERPMIRA,select * from lancamento_contabil where exercicio >= 2025.0  --delete from lancamento_contabil where exercicio >= 2025.0 and num_lancto > 0,True,12000,393
+2026-06-18T00:35:21.539928,"192.168.11.247, 1433",ERPMIRA,select * from lancamento_contabil where exercicio >= 2025.0  delete from lancamento_contabil where exercicio = 2025 and num_lancto between 210304 and 243417,True,12000,659
+2026-06-18T00:35:30.070229,"192.168.11.247, 1433",ERPMIRA,select * from lancamento_contabil where exercicio >= 2025.0  delete from lancamento_contabil where exercicio = 2025 and num_lancto between 210304 and 243417,True,0,135
+2026-06-18T00:37:38.964101,"192.168.11.247, 1433",ERPMIRA,select * from lancamento_contabil where exercicio >= 2025,True,5000,331
+2026-06-18T00:37:51.849411,"192.168.11.247, 1433",ERPMIRA,select *  delete from lancamento_contabil where exercicio >= 2025,False,0,15
+2026-06-18T00:38:10.894515,"192.168.11.247, 1433",ERPMIRA,select *   delete from lancamento_contabil where exercicio >= 2025,False,0,13
+2026-06-18T00:38:14.545558,"192.168.11.247, 1433",ERPMIRA,select *   delete from lancamento_contabil where exercicio >= 2025,False,0,12
+2026-06-18T00:38:26.217749,"192.168.11.247, 1433",ERPMIRA,select *   --delete  from lancamento_contabil where exercicio >= 2025,True,5000,283
+2026-06-18T00:38:38.012334,"192.168.11.247, 1433",ERPMIRA,select *   from lancamento_contabil where exercicio >= 2025,True,5000,284
+2026-06-18T00:38:54.954071,"192.168.11.247, 1433",ERPMIRA,delete from lancamento_contabil where exercicio >= 2025,True,5000,216
+2026-06-18T00:39:04.940556,"192.168.11.247, 1433",ERPMIRA,select *   from lancamento_contabil where exercicio >= 2025,True,0,100
+2026-06-18T07:38:34.479986,"192.168.11.247, 1433",ERPMIRA,delete  from lancamento_contabil_item where exercicio >= 2025,True,2726729,217587
+2026-06-18T07:40:19.045443,"192.168.11.247, 1433",ERPMIRA,select * from lancamento_contabil_item where exercicio >= 2025,True,0,28875
+2026-06-18T19:06:28.027634,"192.168.11.247, 1433",ERPMIRA,select * from lancamento_contabil_item where exercicio >= 2025,True,2728726,66985
+2026-06-18T19:10:23.417631,"192.168.11.247, 1433",ERPMIRA,select * from situacao_exercicio_contabil,False,0,20
+2026-06-18T19:10:53.718751,"192.168.11.247, 1433",ERPMIRA,select * from SITUACAO_EXERC_CONTABIL,True,26,18
+2026-06-18T19:17:05.781341,"192.168.11.247, 1433",ERPMIRA,select * from situacao_exerc_contabil,True,26,49
+2026-06-18T19:20:56.483337,"192.168.11.247, 1433",ERPMIRA,delete from situacao_exerc_contabil where 1=1,True,26,14
+2026-06-18T19:50:34.802780,"192.168.11.247, 1433",ERPMIRA,select * from situacao_exerc_contabil,True,0,25
+2026-06-18T19:50:59.329161,"192.168.11.247, 1433",ERPMIRA,select * from situacao_exerc_contabil,True,0,7
+2026-06-18T19:51:01.329113,"192.168.11.247, 1433",ERPMIRA,select * from situacao_exerc_contabil,True,0,7
+2026-06-18T19:51:02.010173,"192.168.11.247, 1433",ERPMIRA,select * from situacao_exerc_contabil,True,0,7
+2026-06-18T19:51:16.030408,"192.168.11.247, 1433",ERPMIRA,select * from situacao_exerc_contabil where 1=1,True,0,13
+2026-06-18T19:51:17.695078,"192.168.11.247, 1433",ERPMIRA,select * from situacao_exerc_contabil where 1=1,True,0,6
+2026-06-18T19:51:28.354859,"192.168.11.247, 1433",ERPMIRA,select * from situacao_exerc_contabil for update,False,0,23
+2026-06-18T19:51:37.243323,"192.168.11.247, 1433",ERPMIRA,select * from situacao_exerc_contabil,True,0,7
+2026-06-18T19:55:22.430517,"192.168.11.247, 1433",ERPMIRA,select * from situacao_exerc_contabil,True,0,8
+2026-06-18T19:56:27.886554,"192.168.11.247, 1433",ERPMIRA,select top 30 * from situacao_exerc_contabil,True,0,9
+2026-06-18T19:59:02.825554,"192.168.11.247, 1433",ERPMIRA,select top 30 * from situacao_exerc_contabil,True,0,6
+2026-06-18T19:59:25.405072,"192.168.11.247, 1433",ERPMIRA,select * from situacao_exerc_contabil,True,0,8
+2026-06-18T20:09:26.488283,"192.168.11.247, 1433",ERPMIRA,select * from situacao_exerc_contabil,True,0,6
+2026-06-18T20:09:49.820112,"192.168.11.247, 1433",ERPMIRA,select * from situacao_exerc_contabil,True,26,48
+2026-06-18T20:09:53.000335,"192.168.11.247, 1433",ERPMIRA,select * from situacao_exerc_contabil,True,26,47
+2026-06-18T20:10:39.899730,"192.168.11.247, 1433",ERPMIRA,select * from CNT_SALDOS_MENSAIS where exercicio >= 2025,True,8835,570
+2026-06-18T20:11:02.097411,"192.168.11.247, 1433",ERPMIRA,delete from CNT_SALDOS_MENSAIS where exercicio >= 2025,True,8835,87
+2026-06-18T20:11:14.903231,"192.168.11.247, 1433",ERPMIRA,select *  from CNT_SALDOS_MENSAIS where exercicio >= 2025,True,0,14
+2026-06-18T20:20:02.133116,"192.168.11.247, 1433",ERPMIRA,select * from CNT_SALDOS_MENSAIS where exercicio >= 2025,True,8835,323
+2026-06-18T21:15:25.893250,"192.168.11.247, 1433",ERPMIRA,select * from plano_grau,True,15,11
+2026-06-18T21:28:24.821709,"192.168.11.247, 1433",ERPMIRA,select * from HIST_PAD_CONTABIL,True,40,8
+2026-06-18T22:21:59.126746,"192.168.11.247, 1433",ERPMIRA,select * from plano_referencial,False,0,19
+2026-06-18T22:22:07.940830,"192.168.11.247, 1433",ERPMIRA,select * from plano_referencial_sped,True,11156,510
+2026-06-18T22:22:22.252262,"192.168.11.247, 1433",ERPMIRA,select * from plano_referencial_sped where ano_calendario >= 2025,True,0,8
+2026-06-18T22:22:26.137176,"192.168.11.247, 1433",ERPMIRA,select * from plano_referencial_sped where ano_calendario >= 2024,True,1860,204
+2026-06-18T22:22:51.180114,"192.168.11.247, 1433",ERPMIRA,select * from plano_referencial_sped where ano_calendario >= 2025,True,1860,203
+2026-06-18T22:35:30.350639,"192.168.11.247, 1433",ERPMIRA,Select * from empresa,True,3,9
