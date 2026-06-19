@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QSplitter, QStatusBar, QMessageBox, QApplication
+    QSplitter, QStatusBar, QMessageBox, QApplication, QDialog
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QShortcut, QKeySequence
@@ -15,6 +15,7 @@ from ui.connection_panel import ConnectionPanel
 from ui.sql_editor import SQLEditor
 from ui.result_panel import ResultPanel
 from ui.import_dialog import ImportDialog
+from ui.parameter_dialog import ParameterDialog
 from infrastructure.i18n import I18N
 
 
@@ -69,17 +70,6 @@ def _is_single_table_select(sql: str) -> tuple[bool, str]:
     return bool(name), name
 
 
-from application.use_cases import ConnectionUseCase, SQLExecutionUseCase
-from infrastructure.mssql_adapter import MSSQLAdapter
-from infrastructure.logger import CSVLogger
-from infrastructure.config_manager import ConfigManager
-from ui.connection_panel import ConnectionPanel
-from ui.sql_editor import SQLEditor
-from ui.result_panel import ResultPanel
-from ui.import_dialog import ImportDialog
-from infrastructure.i18n import I18N
-
-
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -92,6 +82,7 @@ class MainWindow(QMainWindow):
         self._config_mgr = ConfigManager()
         self._connection_uc = ConnectionUseCase(self._adapter, self._logger)
         self._execution_uc = SQLExecutionUseCase(self._adapter, self._logger)
+        self._last_parameter_values: dict[str, str] = {}
 
         self._build_ui()
         self._load_config()
@@ -137,6 +128,10 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("F5"), self, self._on_execute)
         QShortcut(QKeySequence("Ctrl+Return"), self, self._on_execute)
         QShortcut(QKeySequence("Escape"), self, self._on_cancel)
+        QShortcut(QKeySequence("Ctrl+F"), self, self.sql_editor.show_find)
+        QShortcut(QKeySequence("Ctrl+H"), self, self.sql_editor.show_replace)
+        QShortcut(QKeySequence("F3"), self, self.sql_editor.find_next)
+        QShortcut(QKeySequence("Shift+F3"), self, self.sql_editor.find_previous)
 
     def _on_test(self):
         config = self.connection_panel.get_config()
@@ -239,6 +234,31 @@ class MainWindow(QMainWindow):
         self.result_panel.clear()
         self.status_bar.showMessage(I18N.main_window["disconnected"])
 
+    def _extract_parameters(self, sql: str) -> list[str]:
+        matches = re.findall(r'(?<!:):([a-zA-Z_]\w*)', sql)
+        seen: set[str] = set()
+        return [m for m in matches if not (m in seen or seen.add(m))]
+
+    def _inject_parameters(self, sql: str, values: dict[str, str]) -> str:
+        for name in sorted(values.keys(), key=len, reverse=True):
+            val = values[name]
+            sql = re.sub(rf'(?<!:):{re.escape(name)}(?!\w)', lambda m: val, sql)
+        return sql
+
+    def _strip_param_lines(self, sql: str) -> str:
+        lines = sql.split('\n')
+        clean = []
+        for line in lines:
+            s = line.strip()
+            if not s:
+                continue
+            if re.match(r'^:[a-zA-Z_]\w*$', s):
+                continue
+            while re.match(r'^:[a-zA-Z_]\w*\s', s):
+                s = re.sub(r'^:[a-zA-Z_]\w*\s*', '', s).strip()
+            clean.append(s)
+        return '\n'.join(clean).strip()
+
     def _on_execute(self):
         sql_text = self.sql_editor.get_sql()
         if not sql_text:
@@ -249,7 +269,22 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, I18N.main_window["validation_title"], I18N.main_window["not_connected"])
             return
 
-        sql_upper = sql_text.strip().upper()
+        clean_base = self._strip_param_lines(sql_text)
+        if not clean_base:
+            QMessageBox.warning(self, I18N.main_window["validation_title"], I18N.main_window["no_sql"])
+            return
+
+        params = self._extract_parameters(sql_text)
+        if params:
+            dialog = ParameterDialog(params, self, self._last_parameter_values)
+            if dialog.exec() != QDialog.Accepted:
+                return
+            self._last_parameter_values = dialog.get_values()
+            sql_to_execute = self._inject_parameters(clean_base, self._last_parameter_values)
+        else:
+            sql_to_execute = clean_base
+
+        sql_upper = sql_to_execute.strip().upper()
         is_delete = sql_upper.startswith("DELETE")
         is_update = sql_upper.startswith("UPDATE")
 
@@ -270,7 +305,7 @@ class MainWindow(QMainWindow):
 
             self.sql_editor.add_to_history(sql_text)
 
-            result = self._execution_uc.execute(sql_text)
+            result = self._execution_uc.execute(sql_to_execute)
 
             if result.success:
                 if result.columns:
@@ -307,6 +342,10 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(I18N.main_window["csv_import_cancel"])
 
     def _on_cancel(self):
+        if self.sql_editor.is_search_visible():
+            self.sql_editor.hide_search()
+            self.sql_editor.focus_sql()
+            return
         self.result_panel.clear()
         self.sql_editor.clear_status()
         self.status_bar.showMessage(I18N.main_window["cancelled"])

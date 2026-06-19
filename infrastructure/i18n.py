@@ -42,6 +42,8 @@ class _I18n:
 
     connection_panel: dict = field(default_factory=lambda: {
         "group": "Conexão com Banco de Dados",
+        "collapse": "Recolher",
+        "expand": "Expandir",
         "server_ph": "localhost\\SQLEXPRESS ou 192.168.1.100,1433",
         "server_label": "Servidor:",
         "database_ph": "MeuBanco",
@@ -70,6 +72,16 @@ class _I18n:
         "execute": "Executar (F5)",
         "rows_affected": "{n} linha(s) afetada(s)",
         "rows_returned": "{n} linha(s) retornada(s)",
+        "find_label": "Localizar:",
+        "replace_label": "Substituir por:",
+        "find_next": "Próximo",
+        "find_previous": "Anterior",
+        "replace_btn": "Substituir",
+        "replace_all": "Subst. Todos",
+        "case_sensitive": "Aa",
+        "no_results": "Nenhum resultado",
+        "results_count": "{n} resultado(s)",
+        "close_find": "Fechar",
     })
 
     result_panel: dict = field(default_factory=lambda: {
@@ -158,6 +170,14 @@ class _I18n:
     application: dict = field(default_factory=lambda: {
         "cmd_not_allowed": "O comando '{cmd}' não é permitido. Permitidos: {allowed}",
         "delete_no_where": "DELETE sem cláusula WHERE foi bloqueado. Adicione uma condição WHERE.",
+    })
+
+    parameter_dialog: dict = field(default_factory=lambda: {
+        "title": "Parâmetros da Consulta",
+        "param_column": "Parâmetro",
+        "value_column": "Valor",
+        "ok": "OK",
+        "cancel": "Cancelar",
     })
 
     infrastructure: dict = field(default_factory=lambda: {

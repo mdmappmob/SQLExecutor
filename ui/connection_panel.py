@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QGroupBox, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QCheckBox, QPushButton, QRadioButton,
-    QButtonGroup, QLabel, QSpinBox
+    QButtonGroup, QLabel, QSpinBox, QToolButton, QWidget
 )
 from PySide6.QtCore import Signal, Qt
 
@@ -12,13 +12,37 @@ class ConnectionPanel(QGroupBox):
     connect_clicked = Signal()
     disconnect_clicked = Signal()
     test_clicked = Signal()
+    collapse_changed = Signal(bool)
 
     def __init__(self, parent=None):
-        super().__init__(I18N.connection_panel["group"], parent)
+        super().__init__("", parent)
+        self._collapsed = False
         self._build_ui()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
+        layout.setSpacing(4)
+        layout.setContentsMargins(9, 4, 9, 9)
+
+        header = QHBoxLayout()
+        title_label = QLabel(I18N.connection_panel["group"])
+        title_label.setStyleSheet("font-weight: bold; font-size: 12px; color: #333;")
+        header.addWidget(title_label)
+        header.addStretch()
+
+        self._toggle_btn = QToolButton()
+        self._toggle_btn.setAutoRaise(True)
+        self._toggle_btn.setArrowType(Qt.DownArrow)
+        self._toggle_btn.setToolTip(I18N.connection_panel["collapse"])
+        self._toggle_btn.setStyleSheet("QToolButton { border: none; padding: 2px; }")
+        self._toggle_btn.clicked.connect(self._toggle_collapse)
+        header.addWidget(self._toggle_btn)
+        layout.addLayout(header)
+
+        self._content = QWidget()
+        content_layout = QVBoxLayout(self._content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(4)
 
         form = QFormLayout()
 
@@ -67,7 +91,7 @@ class ConnectionPanel(QGroupBox):
         timeout_layout.addStretch()
         form.addRow(I18N.connection_panel["timeout_label"], timeout_layout)
 
-        layout.addLayout(form)
+        content_layout.addLayout(form)
 
         btn_layout = QHBoxLayout()
         self.test_btn = QPushButton(I18N.connection_panel["test_btn"])
@@ -94,11 +118,27 @@ class ConnectionPanel(QGroupBox):
         btn_layout.addWidget(self.connect_btn)
         btn_layout.addWidget(self.disconnect_btn)
         btn_layout.addStretch()
-        layout.addLayout(btn_layout)
+        content_layout.addLayout(btn_layout)
+
+        layout.addWidget(self._content)
 
         self.status_label = QLabel(I18N.connection_panel["status_disconnected"])
         self.status_label.setStyleSheet("color: #888; font-weight: bold;")
         layout.addWidget(self.status_label)
+
+    def _toggle_collapse(self):
+        self._collapsed = not self._collapsed
+        self._content.setVisible(not self._collapsed)
+        if self._collapsed:
+            self._toggle_btn.setArrowType(Qt.UpArrow)
+            self._toggle_btn.setToolTip(I18N.connection_panel["expand"])
+        else:
+            self._toggle_btn.setArrowType(Qt.DownArrow)
+            self._toggle_btn.setToolTip(I18N.connection_panel["collapse"])
+        self.collapse_changed.emit(self._collapsed)
+
+    def is_collapsed(self) -> bool:
+        return self._collapsed
 
     def set_connected_state(self, connected: bool):
         self.test_btn.setEnabled(not connected)

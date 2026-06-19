@@ -102,13 +102,11 @@ class MSSQLAdapter(DatabaseAdapter):
         start = time.perf_counter()
         sql_text = sql.value.strip()
 
-        is_query = sql_text.upper().startswith("SELECT")
-
         try:
             with self._transaction() as cursor:
-                if is_query:
-                    cursor.execute(sql_text)
-                    columns = [desc[0] for desc in cursor.description] if cursor.description else []
+                cursor.execute(sql_text)
+                columns = [desc[0] for desc in cursor.description] if cursor.description else None
+                if columns is not None:
                     rows = [list(row) for row in cursor.fetchall()]
                     duration_ms = int((time.perf_counter() - start) * 1000)
                     return ExecutionResult(
@@ -117,7 +115,6 @@ class MSSQLAdapter(DatabaseAdapter):
                         columns=columns, rows=rows
                     )
                 else:
-                    cursor.execute(sql_text)
                     rows_affected = cursor.rowcount
                     duration_ms = int((time.perf_counter() - start) * 1000)
                     return ExecutionResult(

@@ -18,11 +18,31 @@ class SQLCommand:
         self._detect_type()
 
     def _detect_type(self):
-        stripped = self.text.value.strip().upper()
+        stripped = self.text.value.strip()
+        upper = stripped.upper()
+
         for cmd_type in CommandType:
-            if stripped.startswith(cmd_type.value):
+            if upper.startswith(cmd_type.value):
                 self.type = cmd_type
                 return
+
+        if upper.startswith("WITH"):
+            depth = 0
+            n = len(upper)
+            for i in range(n):
+                if upper[i] == '(':
+                    depth += 1
+                elif upper[i] == ')':
+                    depth -= 1
+                elif depth == 0:
+                    for cmd_type in CommandType:
+                        if cmd_type == CommandType.UNKNOWN:
+                            continue
+                        if upper[i:].startswith(cmd_type.value):
+                            end = i + len(cmd_type.value)
+                            if end >= n or not (upper[end].isalnum() or upper[end] == '_'):
+                                self.type = cmd_type
+                                return
         self.type = CommandType.UNKNOWN
 
 
