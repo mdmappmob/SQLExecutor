@@ -1,7 +1,8 @@
 import csv
 import copy
 import os
-from datetime import datetime
+from datetime import datetime, date
+from decimal import Decimal
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
@@ -52,6 +53,58 @@ def _quote_sql(val):
     if isinstance(val, (int, float)):
         return str(val)
     return "'" + str(val).replace("'", "''") + "'"
+
+
+_NUMERIC_TYPES_SQL = {
+    "INT", "BIGINT", "SMALLINT", "TINYINT", "BIT",
+    "DECIMAL", "NUMERIC", "FLOAT", "REAL",
+    "MONEY", "SMALLMONEY"
+}
+
+
+def _is_numeric_value(val) -> bool:
+    return isinstance(val, (int, float, Decimal)) and not isinstance(val, bool)
+
+
+def _format_number(val) -> str:
+    if isinstance(val, int):
+        return f"{val:,}".replace(",", ".")
+    if isinstance(val, float):
+        if val == val // 1:
+            return f"{int(val):,}".replace(",", ".")
+        s = str(val).rstrip("0").rstrip(".")
+        if "." in s:
+            int_part, dec_part = s.split(".")
+            int_fmt = f"{int(int_part):,}".replace(",", ".") if int_part else "0"
+            return f"{int_fmt},{dec_part}"
+        return s
+    if isinstance(val, Decimal):
+        rounded = val.quantize(Decimal("0.01"))
+        s = str(rounded)
+        int_part, dec_part = s.split(".")
+        int_fmt = f"{int(int_part):,}".replace(",", ".") if int_part else "0"
+        if dec_part == "00":
+            return int_fmt
+        return f"{int_fmt},{dec_part}"
+
+
+def _format_date(val) -> str:
+    if isinstance(val, datetime):
+        return val.strftime("%d/%m/%Y %H:%M:%S")
+    if isinstance(val, date):
+        return val.strftime("%d/%m/%Y")
+
+
+def _format_display_value(val):
+    if val is None:
+        return "NULL"
+    if isinstance(val, bool):
+        return "1" if val else "0"
+    if _is_numeric_value(val):
+        return _format_number(val)
+    if isinstance(val, (datetime, date)):
+        return _format_date(val)
+    return str(val)
 
 
 class ResultPanel(QWidget):
@@ -115,7 +168,7 @@ class ResultPanel(QWidget):
 
     def _convert_save_value(self, col_name: str, raw) -> object:
         raw_type = self._column_types.get(col_name, "").upper()
-        if raw is None or str(raw).strip() in ("", "NULL"):
+        if raw is None or str(raw).strip().upper() == "NULL":
             return None
         if raw_type in ("DATE", "DATETIME", "DATETIME2", "SMALLDATETIME"):
             from datetime import datetime, date
@@ -294,7 +347,7 @@ class ResultPanel(QWidget):
             self.table.setColumnCount(len(self._last_columns))
             self.table.setHorizontalHeaderLabels(self._last_columns)
             self.table.setRowCount(0)
-            self.table.resizeColumnsToContents()
+            self._resize_columns_smart()
             self._update_nav_buttons()
             return
 
@@ -309,18 +362,47 @@ class ResultPanel(QWidget):
         for local_row, row_data in enumerate(page_rows):
             global_row = self._global_row(local_row)
             for col_idx, cell_value in enumerate(row_data):
-                item = QTableWidgetItem(str(cell_value) if cell_value is not None else "NULL")
+                display_text = _format_display_value(cell_value)
+                item = QTableWidgetItem(display_text)
                 if cell_value is None:
                     item.setForeground(_NULL_COLOR)
                     item.setFont(self._italic_font)
                 else:
                     item.setFont(self._normal_font)
+
+                col_name = self._last_columns[col_idx]
+                is_numeric = (
+                    _is_numeric_value(cell_value)
+                    or self._column_types.get(col_name, "").upper() in _NUMERIC_TYPES_SQL
+                )
+                if is_numeric:
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
                 if (global_row, col_idx) in self._changed_cells:
                     item.setBackground(_CHANGED_COLOR)
                 self.table.setItem(local_row, col_idx, item)
 
-        self.table.resizeColumnsToContents()
+        self._resize_columns_smart()
         self._update_nav_buttons()
+
+    def _resize_columns_smart(self):
+        header = self.table.horizontalHeader()
+        total_width = self.table.viewport().width()
+        col_count = self.table.columnCount()
+        if col_count == 0:
+            return
+
+        self.table.resizeColumnsToContents()
+
+        min_w = 60
+        max_w = 400
+
+        for c in range(col_count):
+            w = self.table.columnWidth(c)
+            if w < min_w:
+                self.table.setColumnWidth(c, min_w)
+            elif w > max_w:
+                self.table.setColumnWidth(c, max_w)
 
     def _update_nav_buttons(self):
         total = len(self._last_rows)
@@ -443,6 +525,7 @@ class ResultPanel(QWidget):
         is_changed = (current_text != orig_text)
 
         if is_changed:
+            self._last_rows[global_row][col] = current_text
             self._changed_cells.add((global_row, col))
             item.setBackground(_CHANGED_COLOR)
         else:
