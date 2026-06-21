@@ -2,7 +2,7 @@
 
 Aplicação desktop para execução de comandos SQL em Microsoft SQL Server.
 
-**Tecnologias:** Python 3.12+, PySide6 (Qt), pyodbc, Clean Architecture
+**Tecnologias:** Python 3.14, PySide6 6.11 (Qt), pyodbc 5.3, Clean Architecture
 
 ---
 
@@ -49,7 +49,7 @@ python main.py
 
 1. Conecte ao SQL Server (preencha servidor, banco e autenticação)
 2. Digite ou cole o comando SQL no editor
-3. Pressione **F5** ou clique **Executar**
+3. Pressione **F9** ou **Ctrl+Return** para executar
 4. Veja os resultados no grid abaixo
 
 Para consultas com parâmetros nomeados (`:param`), um diálogo será exibido automaticamente solicitando os valores.
@@ -58,7 +58,7 @@ Para consultas com parâmetros nomeados (`:param`), um diálogo será exibido au
 
 ## Conexão
 
-O painel de conexão pode ser recolhido/expandido clicando na seta ao lado do título.
+O painel de conexão pode ser recolhido/expandido clicando na seta ao lado do título. O painel também recolhe automaticamente ao conectar e expande ao desconectar.
 
 ### Campos
 
@@ -86,11 +86,24 @@ Ao iniciar, se houver configuração salva, o aplicativo tenta conectar automati
 
 ## Editor SQL
 
-- Editor com fundo escuro e fonte monoespaçada (Consolas 10)
+### Abas múltiplas
+
+- Editor com abas: cada aba tem seu próprio editor, histórico e opção de salvamento
+- Botão **+** no canto direito da barra de abas para criar nova aba
+- Duplo clique na aba para renomear
+- Atalhos de teclado:
+  - `Ctrl+S` — Salvar aba atual em arquivo `.sql`
+  - `Ctrl+Shift+S` — Salvar como...
+  - `Ctrl+O` — Abrir arquivo `.sql` em nova aba
+
+### Editor
+
+- Fundo escuro e fonte monoespaçada (Consolas 10)
 - Comentários `--` e `/* */` são exibidos em itálico
 - Comentários são removidos automaticamente antes da execução
-- **Histórico**: as últimas 100 consultas ficam disponíveis. Com o editor vazio, use **↑** e **↓** para navegar.
+- **Histórico**: as últimas 100 consultas ficam disponíveis por aba. Com o editor vazio, use **↑** e **↓** para navegar.
 - **Seleção**: se houver texto selecionado, apenas ele é executado
+- **Tab**: indentação de bloco (Tab = indentar, Shift+Tab = outdentar)
 
 ### Localizar e Substituir
 
@@ -102,6 +115,7 @@ Ao iniciar, se houver configuração salva, o aplicativo tenta conectar automati
 | `Shift+F3` | Resultado anterior |
 | `Enter` (no campo) | Próximo resultado |
 | `Shift+Enter` (no campo) | Resultado anterior |
+| `Tab` (em "Localizar") | Foco vai para "Substituir por" |
 | `Esc` (no campo) | Fechar barra |
 
 Funcionalidades:
@@ -118,7 +132,7 @@ Funcionalidades:
 | **Importar CSV** | Abre o assistente de importação |
 | **Exportar CSV** | Exporta os resultados para CSV |
 | **Salvar Alterações** | Persiste edições inline no banco |
-| **Executar (F5)** | Executa o comando SQL |
+| **Executar (F9)** | Executa o comando SQL |
 
 ---
 
@@ -143,6 +157,18 @@ INSERT INTO produtos (nome, preco) VALUES (:nome, :preco)
 - Se um parâmetro aparece em uma **linha separada** (ex.: `:cod_empresa` em linha própria), a linha é tratada como declaração visual e removida antes da execução — mas o valor ainda é solicitado e injetado nas ocorrências restantes no SQL
 - Parâmetros no **início da mesma linha** do SQL (ex.: `:cod_empresa SELECT ...`) são automaticamente removidos
 - Os valores preenchidos são lembrados entre execuções
+
+### Tipo automático
+
+O aplicativo detecta o contexto do parâmetro:
+
+- `':param'` (dentro de aspas simples) → tratado como **texto**
+- `= :param` (após operadores) → tratado como **número** (inserido sem aspas)
+- Demais casos → **auto** (número válido sem aspas, caso contrário texto)
+
+### Normalização de datas
+
+Valores no formato brasileiro `dd/mm/yyyy` são automaticamente convertidos para `YYYYMMDD` (sem traços) para compatibilidade total com SQL Server (`DATETIME`, `DATE`, `DATETIME2`, `SMALLDATETIME`).
 
 ### Exemplo
 
@@ -192,6 +218,31 @@ SELECT * FROM cargos WHERE nivel = (SELECT nivel_max FROM MaxNivel)
 ---
 
 ## Grid de Resultados
+
+### Formatação de valores
+
+Valores numéricos são formatados no padrão brasileiro:
+
+| Tipo Python | Exemplo | Exibição |
+|---|---|---|
+| `int` | `2019` | `2.019` |
+| `float` | `123.0` | `123` |
+| `float` | `123.45` | `123,45` |
+| `Decimal('2019.00')` | `Decimal('2019.00')` | `2.019` |
+| `Decimal('17999823.48')` | `17999823.48` | `17.999.823,48` |
+| `None` | — | `NULL` (itálico cinza) |
+
+- Decimal com parte decimal `.00` exibe como inteiro (sem vírgula)
+- Float com parte decimal `.0` exibe como inteiro
+- Colunas numéricas são alinhadas à direita
+- Datas `datetime` são exibidas como `dd/mm/aaaa HH:MM:SS`
+- Datas `date` são exibidas como `dd/mm/aaaa`
+
+### Redimensionamento inteligente de colunas
+
+- Largura mínima: 60 px
+- Largura máxima: 400 px
+- Usuário pode redimensionar manualmente após o ajuste automático
 
 ### Abas
 
@@ -271,7 +322,7 @@ Assistente completo para importação de arquivos CSV:
 
 | Tecla | Ação |
 |---|---|
-| `F5` | Executar SQL |
+| `F9` | Executar SQL |
 | `Ctrl+Return` | Executar SQL |
 | `Escape` | Cancelar (fecha busca ou limpa resultados) |
 | `Ctrl+F` | Localizar |
@@ -281,6 +332,11 @@ Assistente completo para importação de arquivos CSV:
 | `↑` (editor vazio) | Histórico SQL anterior |
 | `↓` (editor vazio) | Próximo SQL do histórico |
 | `Ctrl+V` (grid editável) | Colar da área de transferência |
+| `Ctrl+S` | Salvar aba atual em `.sql` |
+| `Ctrl+Shift+S` | Salvar como... |
+| `Ctrl+O` | Abrir `.sql` em nova aba |
+| `Tab` (seleção) | Indentar bloco |
+| `Shift+Tab` (seleção) | Outdentar bloco |
 
 ---
 
@@ -306,7 +362,7 @@ Para gerar um executável Windows único:
 build.bat
 ```
 
-O executável será gerado em `dist\SQLExecutor.exe` (PyInstaller, onefile, windowed).
+O executável será gerado em `dist\SQLExecutor.exe` (PyInstaller, onefile, windowed, ~48 MB).
 
 ---
 
@@ -318,6 +374,7 @@ SQLExecutor/
 ├── config.ini                  # Configuração de conexão salva
 ├── requirements.txt            # Dependências
 ├── build.bat                   # Script de build PyInstaller
+├── icon.ico                    # Ícone do aplicativo (teal + play verde)
 ├── tests.py                    # Testes unitários
 │
 ├── domain/                     # Camada de domínio
@@ -334,13 +391,14 @@ SQLExecutor/
 │   ├── config_manager.py       # Persistência config.ini
 │   ├── logger.py               # Logs CSV
 │   ├── csv_parser.py           # Parsing de CSV
+│   ├── version.py              # __version__ = "1.0.0"
 │   └── i18n.py                 # Internacionalização (pt-BR)
 │
 ├── ui/                         # Interface do usuário
-│   ├── main_window.py          # Janela principal e atalhos
+│   ├── main_window.py          # Janela principal, atalhos, parâmetros
 │   ├── connection_panel.py     # Painel de conexão (recolhível)
-│   ├── sql_editor.py           # Editor SQL com localizar/substituir
-│   ├── result_panel.py         # Grid com paginação e edição inline
+│   ├── sql_editor.py           # Editor SQL com abas, localizar/substituir
+│   ├── result_panel.py         # Grid com paginação, edição inline, formatação PT-BR
 │   ├── parameter_dialog.py     # Diálogo de parâmetros :param
 │   └── import_dialog.py        # Assistente de importação CSV
 │
@@ -349,6 +407,15 @@ SQLExecutor/
     ├── error_log.csv
     └── connection_log.csv
 ```
+
+---
+
+## Histórico de Versões
+
+| Versão | Novidades |
+|---|---|
+| **1.0.0** | Abas múltiplas, formatação PT-BR (números/datas), parâmetros com tipo automático, redimensionamento inteligente, `F9`, Tab indentação, salvar/abrir `.sql` |
+| Anterior | Edição inline, paginação, importação CSV, CTEs, logs, painel recolhível |
 
 ---
 
