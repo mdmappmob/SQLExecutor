@@ -1,21 +1,28 @@
 # SQL Executor
 
-Aplicação desktop para execução de comandos SQL em Microsoft SQL Server.
+Aplicação desktop para execução de comandos SQL em **Microsoft SQL Server**, **Oracle** e **Firebird**.
 
-**Tecnologias:** Python 3.14, PySide6 6.11 (Qt), pyodbc 5.3, Clean Architecture
+**Tecnologias:** Python 3.14, PySide6 6.11 (Qt), pyodbc, oracledb, fdb, sqlglot, Clean Architecture
+
+**Copyright:** Márcio Donizeti Marcondes
 
 ---
 
 ## Sumário
 
 - [Instalação](#instalação)
-- [Como usar](#como-usar)
 - [Conexão](#conexão)
 - [Editor SQL](#editor-sql)
 - [Parâmetros](#parâmetros)
 - [Execução](#execução)
 - [Grid de Resultados](#grid-de-resultados)
 - [Importar CSV](#importar-csv)
+- [Navegador de Schemas](#navegador-de-schemas)
+- [Histórico](#histórico)
+- [Favoritos](#favoritos)
+- [Sessão](#sessão)
+- [Oracle](#oracle)
+- [Firebird](#firebird)
 - [Atalhos de Teclado](#atalhos-de-teclado)
 - [Arquivos de Log](#arquivos-de-log)
 - [Build](#build)
@@ -28,13 +35,14 @@ Aplicação desktop para execução de comandos SQL em Microsoft SQL Server.
 ### Requisitos
 
 - Python 3.12 ou superior
-- ODBC Driver for SQL Server (versão 17 ou 18 recomendada)
-  - [Download Microsoft ODBC Driver](https://go.microsoft.com/fwlink/?linkid=2293649)
+- Para **SQL Server**: ODBC Driver 17 ou 18 ([Download](https://go.microsoft.com/fwlink/?linkid=2293649))
+- Para **Oracle**: as DLLs do Instant Client já são bundled no executável (Oracle 11c+)
+- Para **Firebird**: a fbclient.dll já é bundled no executável (Firebird 2.5+)
 
 ### Dependências
 
 ```bash
-pip install PySide6>=6.6.0 pyodbc>=5.0.0
+pip install PySide6>=6.6.0 pyodbc>=5.0.0 oracledb>=2.0.0 fdb>=2.0.0 sqlglot>=25.0.0 openpyxl>=3.1.0
 ```
 
 ### Executar
@@ -45,42 +53,34 @@ python main.py
 
 ---
 
-## Como usar
-
-1. Conecte ao SQL Server (preencha servidor, banco e autenticação)
-2. Digite ou cole o comando SQL no editor
-3. Pressione **F9** ou **Ctrl+Return** para executar
-4. Veja os resultados no grid abaixo
-
-Para consultas com parâmetros nomeados (`:param`), um diálogo será exibido automaticamente solicitando os valores.
-
----
-
 ## Conexão
 
-O painel de conexão pode ser recolhido/expandido clicando na seta ao lado do título. O painel também recolhe automaticamente ao conectar e expande ao desconectar.
+O aplicativo suporta três bancos de dados, selecionáveis no diálogo de conexão:
 
-### Campos
+| Banco | Driver | Autenticação |
+|---|---|---|
+| **SQL Server** | ODBC (`pyodbc`) | Windows / SQL Server |
+| **Oracle** | Oracle Client (`oracledb` thick mode) | Usuário/senha |
+| **Firebird** | `fdb` (via fbclient.dll bundled) | Usuário/senha |
 
-| Campo | Descrição |
-|---|---|
-| **Servidor** | Endereço do SQL Server (ex.: `localhost\SQLEXPRESS` ou `192.168.1.100,1433`) |
-| **Banco** | Nome do banco de dados |
-| **Autenticação Windows** | Usa o usuário logado no Windows |
-| **Autenticação SQL Server** | Requer usuário e senha |
-| **Timeout** | Tempo máximo de espera pela conexão (5–120 segundos) |
+### MSSQL
+- **Servidor:** `localhost\SQLEXPRESS` ou `192.168.1.100,1433`
+- **Database:** nome do banco
 
-### Botões
+### Oracle
+- **Servidor:** oculto (não usado)
+- **Database:** DSN completo: `host:porta/serviço` (Easy Connect)
+  - Ex.: `192.168.1.100:1521/ORCL`
+  - TNS names não são suportados (DPY-4027)
 
-| Botão | Ação |
-|---|---|
-| **Testar** | Testa a conexão sem salvar |
-| **Conectar** | Conecta e salva a configuração |
-| **Desconectar** | Encerra a conexão |
+### Firebird
+- **Servidor:** oculto (não usado)
+- **Database:** caminho completo do banco ou host:porta/caminho
+  - Ex.: `C:\dados\BANCO.FDB` ou `192.168.1.100:3050/C:\dados\BANCO.FDB`
 
 ### Auto-conexão
 
-Ao iniciar, se houver configuração salva, o aplicativo tenta conectar automaticamente.
+Ao iniciar, se houver configuração salva, o aplicativo tenta conectar automaticamente. Configurações antigas (com servidor e database separados) são migradas automaticamente.
 
 ---
 
@@ -88,233 +88,206 @@ Ao iniciar, se houver configuração salva, o aplicativo tenta conectar automati
 
 ### Abas múltiplas
 
-- Editor com abas: cada aba tem seu próprio editor, histórico e opção de salvamento
-- Botão **+** no canto direito da barra de abas para criar nova aba
+- Botão **+** no canto direito da barra de abas
 - Duplo clique na aba para renomear
-- Atalhos de teclado:
-  - `Ctrl+S` — Salvar aba atual em arquivo `.sql`
+- Atalhos:
+  - `Ctrl+S` — Salvar aba atual
   - `Ctrl+Shift+S` — Salvar como...
-  - `Ctrl+O` — Abrir arquivo `.sql` em nova aba
+  - `Ctrl+O` — Abrir arquivo `.sql`
 
-### Editor
+### Syntax Highlighting
 
-- Fundo escuro e fonte monoespaçada (Consolas 10)
-- Comentários `--` e `/* */` são exibidos em itálico
-- Comentários são removidos automaticamente antes da execução
-- **Histórico**: as últimas 100 consultas ficam disponíveis por aba. Com o editor vazio, use **↑** e **↓** para navegar.
-- **Seleção**: se houver texto selecionado, apenas ele é executado
-- **Tab**: indentação de bloco (Tab = indentar, Shift+Tab = outdentar)
+Destaque de sintaxe SQL com temas claro/escuro (VS Code Dark):
+
+| Token | Cor |
+|---|---|
+| Palavras-chave (SELECT, FROM, WHERE...) | Amarelo claro `#DCDCAA` |
+| Strings (`'texto'`) | Laranja `#F0C674` |
+| Números | Verde claro `#B5E853` |
+| Comentários (`--`, `/* */`) | Cinza `#5C6370` (itálico) |
+| Operadores | Laranja `#D19A66` |
+
+### Context Menu
+
+Clique direito no editor para:
+- Abrir SQL, Salvar, Salvar como...
+- **Formatar SQL** (usa `sqlglot` — formata CTEs, JOINs, CASE, UNION)
+- **Salvar como Favorito**
+- **Executar (F9)**
 
 ### Localizar e Substituir
 
 | Atalho | Função |
 |---|---|
-| `Ctrl+F` | Abrir barra de localizar |
-| `Ctrl+H` | Abrir localizar + substituir |
-| `F3` | Próximo resultado |
-| `Shift+F3` | Resultado anterior |
-| `Enter` (no campo) | Próximo resultado |
-| `Shift+Enter` (no campo) | Resultado anterior |
-| `Tab` (em "Localizar") | Foco vai para "Substituir por" |
-| `Esc` (no campo) | Fechar barra |
+| `Ctrl+F` | Localizar |
+| `Ctrl+H` | Localizar + Substituir |
+| `F3` / `Shift+F3` | Próximo / anterior |
 
-Funcionalidades:
-- Realce em tempo real de todas as ocorrências
-- Contador de resultados (verde = encontrados, vermelho = nenhum)
-- Botão **Aa** para diferenciar maiúsculas/minúsculas
-- Substituição individual ou **Subst. Todos**
-- Tratamento especial para aspas escapadas SQL (`''`)
-
-### Botões
-
-| Botão | Ação |
-|---|---|
-| **Importar CSV** | Abre o assistente de importação |
-| **Exportar CSV** | Exporta os resultados para CSV |
-| **Salvar Alterações** | Persiste edições inline no banco |
-| **Executar (F9)** | Executa o comando SQL |
+- Realce em tempo real
+- Contador de resultados
+- Botão **Aa** para case-sensitive
 
 ---
 
 ## Parâmetros
 
-O SQL Executor suporta parâmetros nomeados no SQL usando `:nome`.
-
-### Sintaxe
+Suporte a parâmetros nomeados com `:nome`:
 
 ```sql
 SELECT * FROM usuarios WHERE id = :id
 ```
 
-```sql
-INSERT INTO produtos (nome, preco) VALUES (:nome, :preco)
-```
-
-### Comportamento
-
-- Parâmetros são identificados por `:` seguido de letra ou `_` (ex.: `:cod_empresa`)
-- `::` (dois pontos duplos) é ignorado (usado para cast no SQL Server)
-- Se um parâmetro aparece em uma **linha separada** (ex.: `:cod_empresa` em linha própria), a linha é tratada como declaração visual e removida antes da execução — mas o valor ainda é solicitado e injetado nas ocorrências restantes no SQL
-- Parâmetros no **início da mesma linha** do SQL (ex.: `:cod_empresa SELECT ...`) são automaticamente removidos
-- Os valores preenchidos são lembrados entre execuções
-
-### Tipo automático
-
-O aplicativo detecta o contexto do parâmetro:
-
-- `':param'` (dentro de aspas simples) → tratado como **texto**
-- `= :param` (após operadores) → tratado como **número** (inserido sem aspas)
-- Demais casos → **auto** (número válido sem aspas, caso contrário texto)
-
-### Normalização de datas
-
-Valores no formato brasileiro `dd/mm/yyyy` são automaticamente convertidos para `YYYYMMDD` (sem traços) para compatibilidade total com SQL Server (`DATETIME`, `DATE`, `DATETIME2`, `SMALLDATETIME`).
-
-### Exemplo
-
-```sql
--- Funcionários ativos de uma empresa
-:cod_empresa
-SELECT nome, salario
-FROM funcionarios
-WHERE cod_empresa = :cod_empresa
-  AND situacao = 'ATIVO'
-```
-
-O diálogo solicitará o valor de `cod_empresa` e o SQL executado será:
-
-```sql
-SELECT nome, salario
-FROM funcionarios
-WHERE cod_empresa = 1
-  AND situacao = 'ATIVO'
-```
+- `:param` dentro de aspas → tratado como texto
+- `= :param` → tratado como número
+- `::` (dois pontos duplos) ignorado (cast SQL Server)
+- Datas `dd/mm/yyyy` convertidas para `YYYYMMDD`
 
 ---
 
 ## Execução
 
-### Validação
+Comandos permitidos: **SELECT**, **INSERT**, **UPDATE**, **DELETE**.
 
-Apenas comandos **SELECT**, **INSERT**, **UPDATE** e **DELETE** são permitidos. Comandos DDL (DROP, CREATE, ALTER, TRUNCATE) são bloqueados.
-
-### CTEs (WITH)
-
-CTEs são suportados:
-
-```sql
-WITH MaxNivel AS (
-    SELECT MAX(nivel) as nivel_max FROM cargos
-)
-SELECT * FROM cargos WHERE nivel = (SELECT nivel_max FROM MaxNivel)
-```
-
-### Segurança
-
-- **DELETE/UPDATE sem WHERE**: exibe confirmação antes de executar
-- DELETE sem WHERE também é bloqueado pelo validador interno
-- Botões são desabilitados durante a execução
+- CTEs (`WITH`) são suportados
+- **DELETE/UPDATE sem WHERE**: confirmação antes de executar
+- Botão **Executar (F9)** com ícone play branco sobre fundo verde
 
 ---
 
 ## Grid de Resultados
 
-### Formatação de valores
+### Formatação
 
-Valores numéricos são formatados no padrão brasileiro:
-
-| Tipo Python | Exemplo | Exibição |
-|---|---|---|
-| `int` | `2019` | `2.019` |
-| `float` | `123.0` | `123` |
-| `float` | `123.45` | `123,45` |
-| `Decimal('2019.00')` | `Decimal('2019.00')` | `2.019` |
-| `Decimal('17999823.48')` | `17999823.48` | `17.999.823,48` |
-| `None` | — | `NULL` (itálico cinza) |
-
-- Decimal com parte decimal `.00` exibe como inteiro (sem vírgula)
-- Float com parte decimal `.0` exibe como inteiro
-- Colunas numéricas são alinhadas à direita
-- Datas `datetime` são exibidas como `dd/mm/aaaa HH:MM:SS`
-- Datas `date` são exibidas como `dd/mm/aaaa`
-
-### Redimensionamento inteligente de colunas
-
-- Largura mínima: 60 px
-- Largura máxima: 400 px
-- Usuário pode redimensionar manualmente após o ajuste automático
+- Números exibidos sem formatação (valor cru)
+- Datas: `dd/mm/aaaa HH:MM:SS`
+- `NULL` exibido em itálico cinza
+- Colunas numéricas alinhadas à direita
 
 ### Abas
 
-- **Resultados**: exibe as linhas retornadas pela consulta
-- **Mensagens**: mostra mensagens de execução, erros e resultados de salvamento
+- **Resultados**: grid com dados
+- **Mensagens**: logs de execução e salvamento
 
 ### Paginação
 
-Resultados com mais linhas que o tamanho da página são paginados:
-
-| Controle | Função |
-|---|---|
-| **Primeira** | Primeira página |
-| **←** | Página anterior |
-| **Página X de Y** | Indicador central |
-| **→** | Próxima página |
-| **Última** | Última página |
-| **Por página:** | 50, 100, 200, 500 ou 1000 linhas |
+Controles: Primeira, ←, Página X/Y, →, Última. Tamanhos: 50, 100, 200, 500, 1000.
 
 ### Edição Inline
 
-Disponível apenas para `SELECT` de tabela única (sem JOIN, UNION, subquery, CTE).
+Disponível para `SELECT` de tabela única (sem JOIN/UNION/subquery).
 
-- Dê duplo clique em uma célula para editar
+- Duplo clique para editar
 - Células alteradas ficam com fundo amarelo
-- Use **Ctrl+V** para colar dados da área de transferência (TSV)
-- Colunas adicionais são criadas automaticamente ao colar além do limite
-- Clique **Salvar Alterações** para persistir
+- `Ctrl+V` para colar TSV
+- **Salvar Alterações**: gera UPDATE/INSERT automaticamente
+- Parsing inteligente de números no formato brasileiro (ex.: `2.019` → `2019`)
 
-O salvamento gera automaticamente:
-- **UPDATE** para linhas existentes (usa valores originais como cláusula WHERE)
-- **INSERT** para linhas adicionadas
-- Type casting automático (date, datetime, int, float) baseado em `INFORMATION_SCHEMA.COLUMNS`
+### Exportar
 
-### Exportar CSV
-
-- Botão **Exportar CSV** na barra de ferramentas
-- Exporta todas as linhas (não apenas a página atual)
-- Codificação UTF-8-BOM
-- Nome padrão: `query_result_YYYYMMDD_HHMMSS.csv`
-
-### Exibição de NULL
-
-Valores `NULL` são exibidos em itálico cinza.
+Botão com menu dropdown:
+- **CSV** — UTF-8-BOM
+- **Excel** — via `openpyxl` com cabeçalho estilizado
 
 ---
 
 ## Importar CSV
 
-Assistente completo para importação de arquivos CSV:
+Assistente completo:
+1. Selecionar arquivo
+2. Configurar delimitador (auto-detect, vírgula, ponto e vírgula, tab, pipe)
+3. Prévia das primeiras 10 linhas
+4. Mapeamento de colunas (botão "Buscar Colunas" consulta o banco)
+5. Importação em lote (100–10.000)
 
-1. **Selecionar arquivo**: clique **Procurar...** e escolha o CSV
-2. **Configurar**: marque se a primeira linha é cabeçalho, escolha o delimitador
-3. **Prévia**: visualize as primeiras 10 linhas
-4. **Mapeamento**: informe a tabela destino e mapeie as colunas
-5. **Buscar Colunas**: consulta `INFORMATION_SCHEMA.COLUMNS` para preencher automaticamente
-6. **Importar**: define o tamanho do lote (100–10.000) e executa a importação
+---
 
-### Formatos suportados
+## Navegador de Schemas
 
-| Item | Suporte |
-|---|---|
-| Delimitadores | Vírgula, ponto e vírgula, tabulação, pipe |
-| Codificações | UTF-8-SIG, UTF-16-LE, UTF-16-BE, UTF-8 |
-| Extensões | `.csv`, `.txt` |
+Painel acoplável à esquerda que lista tabelas e views do banco conectado.
 
-### Comportamento
+- Expandir tabela para ver suas colunas (nome, tipo, PK)
+- Duplo clique no nome da tabela insere no editor
+- Atualizado automaticamente ao conectar/desconectar
 
-- Cada linha é inserida individualmente com `INSERT INTO`
-- Em caso de erro em uma linha, as demais continuam sendo processadas
-- O primeiro erro é reportado ao final
-- Strings `NULL` no CSV são convertidas para `None` (NULL no banco)
+---
+
+## Histórico
+
+Painel acoplável à direita que lê `logs/query_log.csv` e exibe as últimas 500 consultas.
+
+- Filtro por texto
+- Duplo clique carrega a consulta no editor
+- Colunas: timestamp, status, linhas, duração (ms), SQL
+
+---
+
+## Favoritos
+
+Painel de bookmarks para salvar consultas frequentes.
+
+- **Salvar como Favorito** no menu de contexto do editor
+- Lista com nome e preview do SQL
+- Clique direito: **Carregar** ou **Remover**
+- Persistido em `config/bookmarks.json`
+
+---
+
+## Sessão
+
+O aplicativo salva automaticamente as abas abertas ao fechar:
+
+- Conteúdo, nome da aba e caminho do arquivo (se houver)
+- Restaurado na próxima inicialização
+- Persistido em `config/session.json`
+
+---
+
+## Oracle
+
+### Client Bundled
+
+O executável inclui 7 DLLs do **Oracle Instant Client 19.18 Basic Lite**:
+
+```
+infrastructure/oracle_client/
+├── oci.dll
+├── oraociicus19.dll
+├── orannzsbb19.dll
+├── oraons.dll
+├── ociw32.dll
+├── orasql19.dll
+└── oraocci19.dll
+```
+
+- Modo **thick** ativado automaticamente via `oracledb.init_oracle_client(lib_dir=...)`
+- Suporta Oracle **11c** (não suportado pelo thin mode)
+- **DPY-4027** (TNS names não encontrado): usar Easy Connect (`host:porta/serviço`)
+- **DPY-3010** (servidor 11c não suportado): resolvido com thick mode
+
+---
+
+## Firebird
+
+### Client Bundled
+
+O executável inclui 9 arquivos do **Firebird 2.5.9 Embedded**:
+
+```
+infrastructure/firebird_client/
+├── fbclient.dll          (fbembed.dll renomeado)
+├── icudt30.dll
+├── icuin30.dll
+├── icuuc30.dll
+├── msvcp80.dll
+├── msvcr80.dll
+├── firebird.msg
+├── ib_util.dll
+└── Microsoft.VC80.CRT.manifest
+```
+
+- `fbclient.dll` adicionado ao `PATH` em runtime antes do `import fdb`
+- Suporta **Firebird 2.5+** e **3.0** (conexão remota)
+- Funciona sem instalação do Firebird no sistema
 
 ---
 
@@ -322,47 +295,60 @@ Assistente completo para importação de arquivos CSV:
 
 | Tecla | Ação |
 |---|---|
-| `F9` | Executar SQL |
-| `Ctrl+Return` | Executar SQL |
-| `Escape` | Cancelar (fecha busca ou limpa resultados) |
+| `F9` / `Ctrl+Return` | Executar SQL |
+| `Escape` | Cancelar / fechar busca |
 | `Ctrl+F` | Localizar |
 | `Ctrl+H` | Localizar + Substituir |
-| `F3` | Próximo resultado da busca |
-| `Shift+F3` | Resultado anterior da busca |
-| `↑` (editor vazio) | Histórico SQL anterior |
-| `↓` (editor vazio) | Próximo SQL do histórico |
-| `Ctrl+V` (grid editável) | Colar da área de transferência |
-| `Ctrl+S` | Salvar aba atual em `.sql` |
+| `F3` / `Shift+F3` | Próximo / anterior resultado |
+| `Ctrl+S` | Salvar aba |
 | `Ctrl+Shift+S` | Salvar como... |
-| `Ctrl+O` | Abrir `.sql` em nova aba |
-| `Tab` (seleção) | Indentar bloco |
-| `Shift+Tab` (seleção) | Outdentar bloco |
+| `Ctrl+O` | Abrir `.sql` |
+| `Ctrl+Shift+C` | Fechar aba |
+| `↑` / `↓` (vazio) | Histórico SQL |
+| `Tab` / `Shift+Tab` (seleção) | Indentar / outdentar |
 
 ---
 
 ## Arquivos de Log
 
-O aplicativo mantém três arquivos CSV na pasta `logs/`:
+Em `logs/`:
 
 | Arquivo | Conteúdo |
 |---|---|
-| `query_log.csv` | Timestamp, servidor, banco, SQL, sucesso, linhas afetadas, duração |
+| `query_log.csv` | Timestamp, servidor, banco, SQL, sucesso, linhas, duração |
 | `error_log.csv` | Timestamp, servidor, banco, SQL, erro |
 | `connection_log.csv` | Timestamp, servidor, banco, sucesso |
-
-Os logs são criados automaticamente e apenas acrescentados (sem sobrescrita).
 
 ---
 
 ## Build
 
-Para gerar um executável Windows único:
+### Gerar executável
 
 ```bash
 build.bat
 ```
 
-O executável será gerado em `dist\SQLExecutor.exe` (PyInstaller, onefile, windowed, ~48 MB).
+Comando PyInstaller:
+
+```bash
+pyinstaller --onefile --windowed --name "SQLExecutor" --icon icon.ico ^
+  --add-data "domain;domain" --add-data "application;application" ^
+  --add-data "infrastructure;infrastructure" --add-data "ui;ui" ^
+  --hidden-import pyodbc --hidden-import oracledb --hidden-import fdb ^
+  --hidden-import getpass --hidden-import sqlglot --hidden-import openpyxl ^
+  --clean --noconfirm main.py
+```
+
+Gera `dist\SQLExecutor.exe` (~170 MB devido às DLLs Oracle/Firebird).
+
+### Ícone
+
+O `icon.ico` é gerado via script Python com Pillow: fundo escuro `#2b2b2b` com triângulo play verde `#107c10`.
+
+### Splash Screen
+
+Tela de inicialização com fundo escuro, logotipo play verde, "SQL Executor", versão e copyright.
 
 ---
 
@@ -370,42 +356,54 @@ O executável será gerado em `dist\SQLExecutor.exe` (PyInstaller, onefile, wind
 
 ```
 SQLExecutor/
-├── main.py                     # Ponto de entrada
-├── config.ini                  # Configuração de conexão salva
-├── requirements.txt            # Dependências
-├── build.bat                   # Script de build PyInstaller
-├── icon.ico                    # Ícone do aplicativo (teal + play verde)
-├── tests.py                    # Testes unitários
+├── main.py                         # Ponto de entrada + splash screen + ícone
+├── config.ini                      # Configuração salva
+├── requirements.txt                # Dependências
+├── build.bat                       # Script de build
+├── icon.ico                        # Ícone (verde play em fundo escuro)
+├── tests.py                        # Testes unitários
 │
-├── domain/                     # Camada de domínio
-│   ├── enums.py                # CommandType, ConnectionStatus
-│   ├── value_objects.py        # SQLText, ConnectionConfig
-│   ├── entities.py             # SQLCommand, ExecutionResult
-│   └── interfaces.py           # DatabaseAdapter, CommandValidator, AuditLogger
+├── domain/
+│   ├── enums.py                    # CommandType, ConnectionStatus
+│   ├── value_objects.py            # SQLText, ConnectionConfig (inclui db_type)
+│   ├── entities.py                 # SQLCommand, ExecutionResult
+│   └── interfaces.py               # DatabaseAdapter + ColumnInfo/TableInfo
 │
-├── application/                # Casos de uso
-│   └── use_cases.py            # Conexão, execução, validação
+├── application/
+│   └── use_cases.py                # Conexão, execução, validação
 │
-├── infrastructure/             # Infraestrutura
-│   ├── mssql_adapter.py        # Conexão ODBC SQL Server
-│   ├── config_manager.py       # Persistência config.ini
-│   ├── logger.py               # Logs CSV
-│   ├── csv_parser.py           # Parsing de CSV
-│   ├── version.py              # __version__ = "1.0.0"
-│   └── i18n.py                 # Internacionalização (pt-BR)
+├── infrastructure/
+│   ├── adapters/
+│   │   ├── __init__.py
+│   │   ├── adapter_factory.py      # Factory com lazy imports
+│   │   ├── mssql_adapter.py        # pyodbc + get_schema()
+│   │   ├── oracle_adapter.py       # oracledb thick + get_schema()
+│   │   └── firebird_adapter.py     # fdb + PATH + get_schema()
+│   ├── oracle_client/              # 7 DLLs Instant Client 19.18
+│   ├── firebird_client/            # 9 arquivos Firebird 2.5 Embedded
+│   ├── config_manager.py           # Config.ini (db_type incluso)
+│   ├── logger.py                   # Logs CSV
+│   ├── csv_parser.py               # Parsing CSV
+│   ├── bookmarks.py                # Bookmarks JSON
+│   ├── session.py                  # Session save/restore JSON
+│   ├── version.py                  # __version__ = "1.0.0"
+│   └── i18n.py                     # Internacionalização pt-BR
 │
-├── ui/                         # Interface do usuário
-│   ├── main_window.py          # Janela principal, atalhos, parâmetros
-│   ├── connection_panel.py     # Painel de conexão (recolhível)
-│   ├── sql_editor.py           # Editor SQL com abas, localizar/substituir
-│   ├── result_panel.py         # Grid com paginação, edição inline, formatação PT-BR
-│   ├── parameter_dialog.py     # Diálogo de parâmetros :param
-│   └── import_dialog.py        # Assistente de importação CSV
+├── ui/
+│   ├── main_window.py              # Janela principal, docks, atalhos
+│   ├── splash.py                   # Splash screen
+│   ├── connection_dialog.py        # Diálogo de conexão (multi-DB)
+│   ├── sql_editor.py               # Editor SQL + highlighter + busca
+│   ├── result_panel.py             # Grid, edição inline, exportação
+│   ├── parameter_dialog.py         # Diálogo :param
+│   ├── import_dialog.py            # Importação CSV
+│   ├── schema_browser.py           # Navegador de schemas
+│   ├── history_panel.py            # Painel de histórico
+│   └── bookmarks_panel.py          # Painel de favoritos
 │
-└── logs/                       # Criado em execução
-    ├── query_log.csv
-    ├── error_log.csv
-    └── connection_log.csv
+├── build/                          # PyInstaller build temporário
+├── dist/                           # Executável gerado
+└── logs/                           # Logs em execução
 ```
 
 ---
@@ -414,16 +412,15 @@ SQLExecutor/
 
 | Versão | Novidades |
 |---|---|
-| **1.0.0** | Abas múltiplas, formatação PT-BR (números/datas), parâmetros com tipo automático, redimensionamento inteligente, `F9`, Tab indentação, salvar/abrir `.sql` |
-| Anterior | Edição inline, paginação, importação CSV, CTEs, logs, painel recolhível |
+| **1.0.0** | Abas múltiplas, parâmetros, formatação, paginação, edição inline, importação CSV, CTEs, logs, atalhos |
+| **1.1.0** | Suporte Oracle + Firebird, adapters com get_schema(), schema browser, history panel, bookmarks, session save/restore, Excel export, SQL syntax highlighting, SQL formatter (sqlglot), Oracle Instant Client bundled, Firebird client bundled |
 
 ---
 
 ## Limitações
 
-- Apenas SQL Server (ODBC)
 - Uma conexão por vez
 - Senha salva em texto plano no `config.ini`
-- Histórico SQL apenas em memória (não persiste entre sessões)
-- Edição inline requer SELECT de tabela única
+- Oracle: apenas Easy Connect (sem TNS)
+- Firebird: requer fbclient.dll (bundled ou instalado no sistema)
 - Apenas português brasileiro (pt-BR)

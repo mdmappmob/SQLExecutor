@@ -172,6 +172,42 @@ class MSSQLAdapter(DatabaseAdapter):
                          f"Primeiro erro: {last_error}")
             )
 
+    def get_schema(self) -> list[TableInfo]:
+        from domain.interfaces import TableInfo, ColumnInfo
+        tables: list[TableInfo] = []
+        if not self._connection:
+            return tables
+        cursor = self._connection.cursor()
+        try:
+            for table_type, type_label in [("BASE TABLE", "TABLE"), ("VIEW", "VIEW")]:
+                cursor.execute("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = ? ORDER BY TABLE_NAME", table_type)
+                for row in cursor.fetchall():
+                    tname = row[0]
+                    columns: list[ColumnInfo] = []
+                    cursor.execute("""
+                        SELECT
+                            c.COLUMN_NAME, c.DATA_TYPE,
+                            CASE WHEN c.IS_NULLABLE = 'YES' THEN 1 ELSE 0 END,
+                            CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END
+                        FROM INFORMATION_SCHEMA.COLUMNS c
+                        LEFT JOIN (
+                            SELECT ku.COLUMN_NAME
+                            FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE ku
+                                ON tc.CONSTRAINT_NAME = ku.CONSTRAINT_NAME
+                            WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+                              AND tc.TABLE_NAME = ?
+                        ) pk ON pk.COLUMN_NAME = c.COLUMN_NAME
+                        WHERE c.TABLE_NAME = ?
+                        ORDER BY c.ORDINAL_POSITION
+                    """, tname, tname)
+                    for c in cursor.fetchall():
+                        columns.append(ColumnInfo(name=c[0], data_type=c[1], nullable=bool(c[2]), is_pk=bool(c[3])))
+                    tables.append(TableInfo(name=tname, type=type_label, columns=columns))
+        finally:
+            cursor.close()
+        return tables
+
     def test_connection(self, config: ConnectionConfig) -> bool:
         conn = None
         try:

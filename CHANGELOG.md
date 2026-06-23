@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-19 — Correção: célula vazia; alinhamento de números/moeda à direita
+
+### `ui/result_panel.py`
+- **`_on_cell_changed()`**: agora atualiza `_last_rows[global_row][col]` com o texto digitado. Antes, a célula era marcada como alterada mas o valor nunca era persistido em `_last_rows`, fazendo o UPDATE gerar `SET coluna = valor_antigo` (nada mudava).
+- **`_convert_save_value()`**: string vazia `""` não é mais convertida para `None` (SQL NULL). Agora só o texto literal `"NULL"` gera NULL. Isso permite salvar célula vazia como `''` em colunas VARCHAR NOT NULL (ex.: `VALOR_PARAM`).
+- Comportamento final: (1) apagar célula → salva como string vazia `''`; (2) digitar `"NULL"` → salva como SQL NULL; (3) coluna numérica com célula vazia → erro de conversão esperado.
+- **`_render_page()`**: valores de colunas numéricas e monetárias (`INT`, `BIGINT`, `DECIMAL`, `MONEY`, `FLOAT`, etc.) agora são alinhados à direita na tabela.
+
 ## 2026-06-18 — Edição inline, Paste, Paginação, Comentários, Importação resiliente
 
 ### `infrastructure/mssql_adapter.py`

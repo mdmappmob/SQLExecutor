@@ -1,6 +1,22 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from domain.value_objects import ConnectionConfig, SQLText
 from domain.entities import ExecutionResult
+
+
+@dataclass
+class ColumnInfo:
+    name: str
+    data_type: str
+    nullable: bool = True
+    is_pk: bool = False
+
+
+@dataclass
+class TableInfo:
+    name: str
+    type: str = "TABLE"  # TABLE | VIEW | PROCEDURE
+    columns: list[ColumnInfo] = field(default_factory=list)
 
 
 class DatabaseAdapter(ABC):
@@ -18,6 +34,9 @@ class DatabaseAdapter(ABC):
 
     @abstractmethod
     def test_connection(self, config: ConnectionConfig) -> bool: ...
+
+    def get_schema(self) -> list[TableInfo]:
+        return []
 
 
 class CommandValidator(ABC):

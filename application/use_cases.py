@@ -26,9 +26,10 @@ class AllowedCommandsValidator(CommandValidator):
 
 
 class ConnectionUseCase:
-    def __init__(self, adapter: DatabaseAdapter, logger: AuditLogger):
+    def __init__(self, adapter: DatabaseAdapter, logger: AuditLogger, db_type: str = "mssql"):
         self._adapter = adapter
         self._logger = logger
+        self._db_type = db_type
         self.session = ConnectionSession(server="", database="", username="")
 
     def connect(
@@ -43,8 +44,10 @@ class ConnectionUseCase:
         self.session.status = ConnectionStatus.CONNECTING
 
         try:
+            server_val = server if server else database
             config = ConnectionConfig(
-                server=ServerName(server),
+                db_type=self._db_type,
+                server=ServerName(server_val),
                 database=DatabaseName(database),
                 username=username,
                 password=password,
@@ -78,8 +81,10 @@ class ConnectionUseCase:
         password: str = "",
         use_windows_auth: bool = True,
     ) -> bool:
+        server_val = server if server else database
         config = ConnectionConfig(
-            server=ServerName(server),
+            db_type=self._db_type,
+            server=ServerName(server_val),
             database=DatabaseName(database),
             username=username,
             password=password,

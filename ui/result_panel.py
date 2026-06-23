@@ -7,7 +7,7 @@ from decimal import Decimal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QTextEdit, QTabWidget, QLabel, QPushButton, QFileDialog, QMessageBox,
-    QComboBox, QApplication
+    QComboBox, QApplication, QMenu
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QColor
@@ -67,25 +67,7 @@ def _is_numeric_value(val) -> bool:
 
 
 def _format_number(val) -> str:
-    if isinstance(val, int):
-        return f"{val:,}".replace(",", ".")
-    if isinstance(val, float):
-        if val == val // 1:
-            return f"{int(val):,}".replace(",", ".")
-        s = str(val).rstrip("0").rstrip(".")
-        if "." in s:
-            int_part, dec_part = s.split(".")
-            int_fmt = f"{int(int_part):,}".replace(",", ".") if int_part else "0"
-            return f"{int_fmt},{dec_part}"
-        return s
-    if isinstance(val, Decimal):
-        rounded = val.quantize(Decimal("0.01"))
-        s = str(rounded)
-        int_part, dec_part = s.split(".")
-        int_fmt = f"{int(int_part):,}".replace(",", ".") if int_part else "0"
-        if dec_part == "00":
-            return int_fmt
-        return f"{int_fmt},{dec_part}"
+    return str(val)
 
 
 def _format_date(val) -> str:
@@ -166,6 +148,18 @@ class ResultPanel(QWidget):
         except Exception:
             self._column_types = {}
 
+    @staticmethod
+    def _parse_br_number(s: str):
+        s = s.strip()
+        if "," in s:
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(".", "")
+        try:
+            return int(s)
+        except ValueError:
+            return float(s)
+
     def _convert_save_value(self, col_name: str, raw) -> object:
         raw_type = self._column_types.get(col_name, "").upper()
         if raw is None or str(raw).strip().upper() == "NULL":
@@ -188,12 +182,18 @@ class ResultPanel(QWidget):
             try:
                 return int(str(raw).strip())
             except ValueError:
-                return raw
+                try:
+                    return int(self._parse_br_number(str(raw)))
+                except (ValueError, TypeError):
+                    return raw
         if raw_type in ("DECIMAL", "NUMERIC", "FLOAT", "REAL", "MONEY"):
             try:
                 return float(str(raw).strip())
             except ValueError:
-                return raw
+                try:
+                    return self._parse_br_number(str(raw))
+                except (ValueError, TypeError):
+                    return raw
         return raw
 
     def _build_ui(self):
@@ -225,7 +225,10 @@ class ResultPanel(QWidget):
             QPushButton:hover { background-color: #138496; }
             QPushButton:disabled { color: #aaa; background-color: #ccc; }
         """)
-        self.export_btn.clicked.connect(self._export_csv)
+        self.export_menu = QMenu(self)
+        self.export_menu.addAction("CSV (.csv)", self._export_csv)
+        self.export_menu.addAction("Excel (.xlsx)", self._export_excel)
+        self.export_btn.setMenu(self.export_menu)
 
         layout.addWidget(self.tabs)
 
@@ -696,12 +699,12 @@ class ResultPanel(QWidget):
 
     def _export_csv(self):
         if not self._last_columns:
-            QMessageBox.information(self, I18N.result_panel["export_title"], I18N.result_panel["no_data_export"])
+            QMessageBox.information(self, I18N.result_panel["export_title_csv"], I18N.result_panel["no_data_export"])
             return
 
         default_name = f"query_result_{datetime.now():%Y%m%d_%H%M%S}.csv"
         file_path, _ = QFileDialog.getSaveFileName(
-            self, I18N.result_panel["export_title"], default_name, I18N.result_panel["export_filter"]
+            self, I18N.result_panel["export_title_csv"], default_name, I18N.result_panel["export_filter_csv"]
         )
         if not file_path:
             return
@@ -712,7 +715,64 @@ class ResultPanel(QWidget):
                 writer.writerow(self._last_columns)
                 writer.writerows(self._last_rows)
             QMessageBox.information(
-                self, I18N.result_panel["export_title"],
+                self, I18N.result_panel["export_title_csv"],
+                I18N.result_panel["export_ok"].format(n=len(self._last_rows), path=file_path)
+            )
+            self.status_message.emit(
+                I18N.result_panel["export_ok"].format(n=len(self._last_rows), path=file_path), 5000
+            )
+        except Exception as e:
+            QMessageBox.critical(self, I18N.result_panel["export_error"], str(e))
+
+    def _export_excel(self):
+        try:
+            from openpyxl import Workbook
+        except ImportError:
+            QMessageBox.critical(self, I18N.result_panel["export_error"],
+                                 "Pacote 'openpyxl' necessário para exportar Excel.")
+            return
+
+        if not self._last_columns:
+            QMessageBox.information(self, I18N.result_panel["export_title_xlsx"], I18N.result_panel["no_data_export"])
+            return
+
+        default_name = f"query_result_{datetime.now():%Y%m%d_%H%M%S}.xlsx"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, I18N.result_panel["export_title_xlsx"], default_name, I18N.result_panel["export_filter_xlsx"]
+        )
+        if not file_path:
+            return
+
+        try:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Resultados"
+
+            from openpyxl.styles import Font, PatternFill
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="0078D4", fill_type="solid")
+
+            for c, col_name in enumerate(self._last_columns, 1):
+                cell = ws.cell(row=1, column=c, value=str(col_name))
+                cell.font = header_font
+                cell.fill = header_fill
+
+            for r, row in enumerate(self._last_rows, 2):
+                for c, val in enumerate(row, 1):
+                    if val is None:
+                        ws.cell(row=r, column=c, value="NULL")
+                    elif isinstance(val, (Decimal, float)):
+                        ws.cell(row=r, column=c, value=float(val))
+                    elif isinstance(val, int):
+                        ws.cell(row=r, column=c, value=val)
+                    elif isinstance(val, datetime):
+                        ws.cell(row=r, column=c, value=val.isoformat() if val else "")
+                    else:
+                        ws.cell(row=r, column=c, value=str(val))
+
+            wb.save(file_path)
+            QMessageBox.information(
+                self, I18N.result_panel["export_title_xlsx"],
                 I18N.result_panel["export_ok"].format(n=len(self._last_rows), path=file_path)
             )
             self.status_message.emit(

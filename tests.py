@@ -23,8 +23,9 @@ def test_value_objects():
     assert sql.is_dml
     assert not SQLText("DROP TABLE T").is_dml
 
-    cfg = ConnectionConfig(ServerName("srv"), DatabaseName("db"), "", "", True)
+    cfg = ConnectionConfig(db_type="mssql", server=ServerName("srv"), database=DatabaseName("db"), username="", password="", use_windows_auth=True)
     assert cfg.server.value == "srv"
+    assert cfg.db_type == "mssql"
 
     print("  value_objects: OK")
 
@@ -81,10 +82,11 @@ def test_config_manager():
         assert d["server"] == ""
         assert d["timeout"] == 30
 
-        cm.save({"server": "x", "database": "y", "username": "", "use_windows_auth": True, "timeout": 30})
+        cm.save({"db_type": "mssql", "server": "x", "database": "y", "username": "", "use_windows_auth": True, "timeout": 30})
         d2 = cm.load()
         assert d2["server"] == "x"
         assert d2["database"] == "y"
+        assert d2["db_type"] == "mssql"
         assert os.path.isfile(os.path.join(tmp, "c.ini"))
 
     print("  config_manager: OK")
@@ -187,7 +189,7 @@ def test_ui_imports():
     except ImportError:
         print("  SKIP: PySide6 not installed")
         return
-    from ui.connection_panel import ConnectionPanel
+    from ui.connection_dialog import ConnectionDialog
     from ui.sql_editor import SQLEditor
     from ui.result_panel import ResultPanel
 

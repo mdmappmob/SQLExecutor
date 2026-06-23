@@ -21,17 +21,22 @@ if exist "*.spec" del /q "*.spec" 2>nul
 
 :: Build
 echo [INFO] Building...
-pyinstaller ^
+python -m PyInstaller ^
     --onefile ^
     --windowed ^
     --name "SQLExecutor" ^
-    --icon NONE ^
+    --icon icon.ico ^
     --add-data "domain;domain" ^
     --add-data "application;application" ^
     --add-data "infrastructure;infrastructure" ^
     --add-data "ui;ui" ^
     --hidden-import pyodbc ^
+    --hidden-import oracledb ^
+    --hidden-import fdb ^
+    --hidden-import getpass ^
+    --hidden-import sqlglot ^
     --clean ^
+    --noconfirm ^
     main.py
 
 if %errorlevel% equ 0 (

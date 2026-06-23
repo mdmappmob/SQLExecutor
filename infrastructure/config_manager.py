@@ -16,6 +16,7 @@ class ConfigManager:
             return self._defaults()
 
         return {
+            "db_type": config.get("Connection", "db_type", fallback="mssql"),
             "server": config.get("Connection", "server", fallback=""),
             "database": config.get("Connection", "database", fallback=""),
             "username": config.get("Connection", "username", fallback=""),
@@ -27,6 +28,7 @@ class ConfigManager:
     def save(self, data: dict) -> None:
         config = configparser.ConfigParser()
         config["Connection"] = {
+            "db_type": data.get("db_type", "mssql"),
             "server": data.get("server", ""),
             "database": data.get("database", ""),
             "username": data.get("username", ""),
@@ -48,6 +50,7 @@ class ConfigManager:
 
     def _defaults(self) -> dict:
         return {
+            "db_type": "mssql",
             "server": "",
             "database": "",
             "username": "",

@@ -42,6 +42,7 @@ class SQLText:
 
 @dataclass(frozen=True)
 class ConnectionConfig:
+    db_type: str
     server: ServerName
     database: DatabaseName
     username: str
