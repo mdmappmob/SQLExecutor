@@ -147,11 +147,12 @@ class ConnectionDialog(QDialog):
 
         server = config.get("server", "")
         database = config.get("database", "")
-        # Migrate old configs that stored server and database separately
         if db_type == "oracle" and server and database and server != database:
             database = f"{server}/{database}"
         elif db_type == "firebird" and server and database and server != database:
             database = f"{server}:{database}"
+        elif db_type in ("mysql", "mariadb", "postgresql") and server and database and server != database:
+            server = database
 
         self.server_edit.setText(server if db_type == "mssql" else "")
         self.database_edit.setText(database)
@@ -195,11 +196,29 @@ class ConnectionDialog(QDialog):
             self.sql_auth_rb.setChecked(True)
             self.username_edit.setEnabled(True)
             self.password_edit.setEnabled(True)
-        else:  # firebird
+        elif db_type == "firebird":
             self._server_label.setVisible(False)
             self._server_row.setVisible(False)
             self._database_label.setText("Database / Caminho")
             self.database_edit.setPlaceholderText("Ex: localhost/3050:C:\\db\\banco.fdb")
+            self._auth_choice_row.setVisible(False)
+            self.sql_auth_rb.setChecked(True)
+            self.username_edit.setEnabled(True)
+            self.password_edit.setEnabled(True)
+        elif db_type in ("mysql", "mariadb"):
+            self._server_label.setVisible(True)
+            self._server_row.setVisible(True)
+            self._database_label.setText("Database / Schema")
+            self.database_edit.setPlaceholderText("Ex: meubanco")
+            self._auth_choice_row.setVisible(False)
+            self.sql_auth_rb.setChecked(True)
+            self.username_edit.setEnabled(True)
+            self.password_edit.setEnabled(True)
+        else:  # postgresql
+            self._server_label.setVisible(True)
+            self._server_row.setVisible(True)
+            self._database_label.setText("Database / Schema")
+            self.database_edit.setPlaceholderText("Ex: meubanco")
             self._auth_choice_row.setVisible(False)
             self.sql_auth_rb.setChecked(True)
             self.username_edit.setEnabled(True)

@@ -35,6 +35,8 @@ python -m PyInstaller ^
     --hidden-import fdb ^
     --hidden-import getpass ^
     --hidden-import sqlglot ^
+    --hidden-import pymysql ^
+    --hidden-import psycopg2 ^
     --clean ^
     --noconfirm ^
     main.py

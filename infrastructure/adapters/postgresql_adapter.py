@@ -1,8 +1,6 @@
-import os
-import sys
 import time
 
-import oracledb
+import psycopg2
 
 from domain.interfaces import DatabaseAdapter
 from domain.value_objects import ConnectionConfig, SQLText
@@ -10,19 +8,8 @@ from domain.entities import ExecutionResult
 from infrastructure.i18n import I18N
 
 
-def _get_client_dir() -> str:
-    if getattr(sys, "frozen", False):
-        return os.path.join(sys._MEIPASS, "infrastructure", "oracle_client")
-    return os.path.join(os.path.dirname(os.path.dirname(__file__)), "oracle_client")
-
-
-_client_dir = _get_client_dir()
-if os.path.isdir(_client_dir):
-    oracledb.init_oracle_client(lib_dir=_client_dir)
-
-
-class OracleAdapter(DatabaseAdapter):
-    _connection: oracledb.Connection | None = None
+class PostgreSQLAdapter(DatabaseAdapter):
+    _connection: psycopg2.extensions.connection | None = None
     _server: str = ""
     _database: str = ""
 
@@ -31,16 +18,14 @@ class OracleAdapter(DatabaseAdapter):
             self.disconnect()
         self._server = config.server.value
         self._database = config.database.value
-        dsn = config.database.value
-
-        if config.use_windows_auth:
-            self._connection = oracledb.connect(dsn=dsn)
-        else:
-            self._connection = oracledb.connect(
-                user=config.username,
-                password=config.password,
-                dsn=dsn,
-            )
+        self._connection = psycopg2.connect(
+            host=config.server.value,
+            dbname=config.database.value,
+            user=config.username,
+            password=config.password,
+            connect_timeout=config.timeout_seconds,
+        )
+        self._connection.autocommit = False
 
     def disconnect(self) -> None:
         if self._connection:
@@ -56,10 +41,10 @@ class OracleAdapter(DatabaseAdapter):
             return False
         try:
             cursor = self._connection.cursor()
-            cursor.execute("SELECT 1 FROM DUAL")
+            cursor.execute("SELECT 1")
             cursor.close()
             return True
-        except oracledb.Error:
+        except psycopg2.Error:
             return False
 
     def execute(self, sql: SQLText) -> ExecutionResult:
@@ -94,7 +79,7 @@ class OracleAdapter(DatabaseAdapter):
                     duration_ms=duration_ms,
                     message=I18N.infrastructure["rows_affected"].format(n=rows_affected)
                 )
-        except oracledb.Error as e:
+        except psycopg2.Error as e:
             self._connection.rollback()
             duration_ms = int((time.perf_counter() - start) * 1000)
             error_msg = str(e).strip()
@@ -127,7 +112,7 @@ class OracleAdapter(DatabaseAdapter):
                 cursor.execute(sql_template, row)
                 self._connection.commit()
                 successful += 1
-            except oracledb.Error as e:
+            except psycopg2.Error as e:
                 self._connection.rollback()
                 failed += 1
                 if not last_error:
@@ -157,34 +142,36 @@ class OracleAdapter(DatabaseAdapter):
             return tables
         cursor = self._connection.cursor()
         try:
-            for owner_query, view_name_col, obj_type in [
-                ("ALL_TABLES", "TABLE_NAME", "TABLE"),
-                ("ALL_VIEWS", "VIEW_NAME", "VIEW"),
-            ]:
-                cursor.execute(f"SELECT {view_name_col} FROM {owner_query} WHERE OWNER = USER ORDER BY {view_name_col}")
-                for row in cursor.fetchall():
-                    tname = row[0]
-                    columns: list[ColumnInfo] = []
-                    cursor.execute("""
-                        SELECT
-                            c.COLUMN_NAME, c.DATA_TYPE,
-                            CASE WHEN c.NULLABLE = 'Y' THEN 1 ELSE 0 END,
-                            CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END
-                        FROM ALL_TAB_COLUMNS c
-                        LEFT JOIN (
-                            SELECT acc.COLUMN_NAME
-                            FROM ALL_CONS_COLUMNS acc
-                            JOIN ALL_CONSTRAINTS ac ON acc.CONSTRAINT_NAME = ac.CONSTRAINT_NAME
-                            WHERE ac.CONSTRAINT_TYPE = 'P'
-                              AND acc.TABLE_NAME = :1
-                        ) pk ON pk.COLUMN_NAME = c.COLUMN_NAME
-                        WHERE c.TABLE_NAME = :1
-                          AND c.OWNER = USER
-                        ORDER BY c.COLUMN_ID
-                    """, [tname])
-                    for c in cursor.fetchall():
-                        columns.append(ColumnInfo(name=c[0], data_type=c[1], nullable=bool(c[2]), is_pk=bool(c[3])))
-                    tables.append(TableInfo(name=tname, type=obj_type, columns=columns))
+            cursor.execute("""
+                SELECT table_name, table_type
+                FROM information_schema.tables
+                WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+                ORDER BY table_name
+            """)
+            for row in cursor.fetchall():
+                tname, ttype_raw = row[0], row[1]
+                type_label = "VIEW" if ttype_raw == "VIEW" else "TABLE"
+                columns: list[ColumnInfo] = []
+                cursor.execute("""
+                    SELECT c.column_name, c.data_type,
+                           CASE WHEN c.is_nullable = 'YES' THEN 1 ELSE 0 END,
+                           CASE WHEN pk.column_name IS NOT NULL THEN 1 ELSE 0 END
+                    FROM information_schema.columns c
+                    LEFT JOIN (
+                        SELECT ku.column_name
+                        FROM information_schema.table_constraints tc
+                        JOIN information_schema.key_column_usage ku
+                            ON tc.constraint_name = ku.constraint_name
+                        WHERE tc.constraint_type = 'PRIMARY KEY'
+                          AND tc.table_name = %s
+                    ) pk ON pk.column_name = c.column_name
+                    WHERE c.table_name = %s
+                      AND c.table_schema NOT IN ('pg_catalog', 'information_schema')
+                    ORDER BY c.ordinal_position
+                """, (tname, tname))
+                for c in cursor.fetchall():
+                    columns.append(ColumnInfo(name=c[0], data_type=c[1], nullable=bool(c[2]), is_pk=bool(c[3])))
+                tables.append(TableInfo(name=tname, type=type_label, columns=columns))
         finally:
             cursor.close()
         return tables
@@ -196,27 +183,42 @@ class OracleAdapter(DatabaseAdapter):
             return result
         cursor = self._connection.cursor()
         try:
-            owner_clause = "AND c.OWNER = :1" if schema is None else "AND c.OWNER = :1"
-            owner_val = schema or self._connection.username.upper() if hasattr(self._connection, 'username') else schema
-            if owner_val is None:
-                cursor.execute("SELECT USER FROM DUAL")
-                owner_val = cursor.fetchone()[0]
-            cursor.execute("""
-                SELECT c.COLUMN_NAME, c.DATA_TYPE,
-                       CASE WHEN c.NULLABLE = 'Y' THEN 1 ELSE 0 END,
-                       CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END
-                FROM ALL_TAB_COLUMNS c
-                LEFT JOIN (
-                    SELECT acc.COLUMN_NAME
-                    FROM ALL_CONS_COLUMNS acc
-                    JOIN ALL_CONSTRAINTS ac ON acc.CONSTRAINT_NAME = ac.CONSTRAINT_NAME
-                    WHERE ac.CONSTRAINT_TYPE = 'P'
-                      AND acc.TABLE_NAME = :2
-                ) pk ON pk.COLUMN_NAME = c.COLUMN_NAME
-                WHERE c.TABLE_NAME = :2
-                  AND c.OWNER = :1
-                ORDER BY c.COLUMN_ID
-            """, [owner_val, table_name])
+            if schema:
+                cursor.execute("""
+                    SELECT c.column_name, c.data_type,
+                           CASE WHEN c.is_nullable = 'YES' THEN 1 ELSE 0 END,
+                           CASE WHEN pk.column_name IS NOT NULL THEN 1 ELSE 0 END
+                    FROM information_schema.columns c
+                    LEFT JOIN (
+                        SELECT ku.column_name
+                        FROM information_schema.table_constraints tc
+                        JOIN information_schema.key_column_usage ku
+                            ON tc.constraint_name = ku.constraint_name
+                        WHERE tc.constraint_type = 'PRIMARY KEY'
+                          AND tc.table_name = %s
+                    ) pk ON pk.column_name = c.column_name
+                    WHERE c.table_name = %s
+                      AND c.table_schema = %s
+                    ORDER BY c.ordinal_position
+                """, (table_name, table_name, schema))
+            else:
+                cursor.execute("""
+                    SELECT c.column_name, c.data_type,
+                           CASE WHEN c.is_nullable = 'YES' THEN 1 ELSE 0 END,
+                           CASE WHEN pk.column_name IS NOT NULL THEN 1 ELSE 0 END
+                    FROM information_schema.columns c
+                    LEFT JOIN (
+                        SELECT ku.column_name
+                        FROM information_schema.table_constraints tc
+                        JOIN information_schema.key_column_usage ku
+                            ON tc.constraint_name = ku.constraint_name
+                        WHERE tc.constraint_type = 'PRIMARY KEY'
+                          AND tc.table_name = %s
+                    ) pk ON pk.column_name = c.column_name
+                    WHERE c.table_name = %s
+                      AND c.table_schema NOT IN ('pg_catalog', 'information_schema')
+                    ORDER BY c.ordinal_position
+                """, (table_name, table_name))
             for row in cursor.fetchall():
                 result.append(ColumnInfo(name=row[0], data_type=row[1], nullable=bool(row[2]), is_pk=bool(row[3])))
         finally:
@@ -226,20 +228,18 @@ class OracleAdapter(DatabaseAdapter):
     def test_connection(self, config: ConnectionConfig) -> bool:
         conn = None
         try:
-            dsn = config.database.value
-            if config.use_windows_auth:
-                conn = oracledb.connect(dsn=dsn)
-            else:
-                conn = oracledb.connect(
-                    user=config.username,
-                    password=config.password,
-                    dsn=dsn,
-                )
+            conn = psycopg2.connect(
+                host=config.server.value,
+                dbname=config.database.value,
+                user=config.username,
+                password=config.password,
+                connect_timeout=10,
+            )
             cursor = conn.cursor()
-            cursor.execute("SELECT 1 FROM DUAL")
+            cursor.execute("SELECT 1")
             cursor.close()
             return True
-        except oracledb.Error:
+        except psycopg2.Error:
             return False
         finally:
             if conn:

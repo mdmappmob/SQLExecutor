@@ -197,6 +197,46 @@ class FirebirdAdapter(DatabaseAdapter):
             cursor.close()
         return tables
 
+    def get_table_columns(self, table_name: str, schema: str | None = None) -> list[ColumnInfo]:
+        from domain.interfaces import ColumnInfo
+        result: list[ColumnInfo] = []
+        if not self._connection:
+            return result
+        cursor = self._connection.cursor()
+        try:
+            cursor.execute("""
+                SELECT
+                    TRIM(RF.RDB$FIELD_NAME),
+                    CASE F.RDB$FIELD_TYPE
+                        WHEN 7 THEN 'SMALLINT' WHEN 8 THEN 'INTEGER'
+                        WHEN 10 THEN 'FLOAT' WHEN 12 THEN 'DATE'
+                        WHEN 13 THEN 'TIME' WHEN 14 THEN 'CHAR'
+                        WHEN 16 THEN 'BIGINT' WHEN 27 THEN 'DOUBLE'
+                        WHEN 35 THEN 'TIMESTAMP' WHEN 37 THEN 'VARCHAR'
+                        WHEN 40 THEN 'CLOB' WHEN 45 THEN 'BLOB_ID'
+                        WHEN 261 THEN 'BLOB' ELSE 'UNKNOWN'
+                    END,
+                    COALESCE(RF.RDB$NULL_FLAG, 0),
+                    CASE WHEN pk.RDB$FIELD_NAME IS NOT NULL THEN 1 ELSE 0 END
+                FROM RDB$RELATION_FIELDS RF
+                JOIN RDB$FIELDS F ON RF.RDB$FIELD_SOURCE = F.RDB$FIELD_NAME
+                LEFT JOIN (
+                    SELECT S.RDB$FIELD_NAME
+                    FROM RDB$INDICES I
+                    JOIN RDB$INDEX_SEGMENTS S ON I.RDB$INDEX_NAME = S.RDB$INDEX_NAME
+                    WHERE I.RDB$RELATION_NAME = ?
+                      AND I.RDB$UNIQUE_FLAG = 1
+                      AND I.RDB$INDEX_INACTIVE IS NULL
+                ) pk ON pk.RDB$FIELD_NAME = RF.RDB$FIELD_NAME
+                WHERE RF.RDB$RELATION_NAME = ?
+                ORDER BY RF.RDB$FIELD_POSITION
+            """, (table_name, table_name))
+            for row in cursor.fetchall():
+                result.append(ColumnInfo(name=row[0], data_type=row[1], nullable=not bool(row[2]), is_pk=bool(row[3])))
+        finally:
+            cursor.close()
+        return result
+
     def test_connection(self, config: ConnectionConfig) -> bool:
         conn = None
         try:

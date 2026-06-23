@@ -38,6 +38,12 @@ class DatabaseAdapter(ABC):
     def get_schema(self) -> list[TableInfo]:
         return []
 
+    def get_table_columns(self, table_name: str, schema: str | None = None) -> list[ColumnInfo]:
+        return []
+
+    def get_connection(self):
+        return self._connection if hasattr(self, "_connection") else None
+
 
 class CommandValidator(ABC):
     @abstractmethod

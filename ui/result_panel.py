@@ -128,23 +128,8 @@ class ResultPanel(QWidget):
             table = parts[1].strip("[]")
 
         try:
-            conn = self._adapter._connection
-            cursor = conn.cursor()
-            if schema:
-                cursor.execute("""
-                    SELECT COLUMN_NAME, DATA_TYPE
-                    FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
-                """, schema, table)
-            else:
-                cursor.execute("""
-                    SELECT COLUMN_NAME, DATA_TYPE
-                    FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_NAME = ?
-                """, table)
-            for row in cursor.fetchall():
-                self._column_types[row.COLUMN_NAME] = row.DATA_TYPE
-            cursor.close()
+            cols = self._adapter.get_table_columns(table, schema)
+            self._column_types = {c.name: c.data_type for c in cols}
         except Exception:
             self._column_types = {}
 
@@ -597,7 +582,7 @@ class ResultPanel(QWidget):
 
         conn = None
         try:
-            conn = self._adapter._connection
+            conn = self._adapter.get_connection()
             ok = 0
             errors = 0
             last_error = ""

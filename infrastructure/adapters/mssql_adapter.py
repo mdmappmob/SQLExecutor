@@ -208,6 +208,37 @@ class MSSQLAdapter(DatabaseAdapter):
             cursor.close()
         return tables
 
+    def get_table_columns(self, table_name: str, schema: str | None = None) -> list[ColumnInfo]:
+        from domain.interfaces import ColumnInfo
+        result: list[ColumnInfo] = []
+        if not self._connection:
+            return result
+        cursor = self._connection.cursor()
+        try:
+            if schema:
+                cursor.execute("""
+                    SELECT COLUMN_NAME, DATA_TYPE,
+                           CASE WHEN IS_NULLABLE = 'YES' THEN 1 ELSE 0 END,
+                           0
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+                    ORDER BY ORDINAL_POSITION
+                """, schema, table_name)
+            else:
+                cursor.execute("""
+                    SELECT COLUMN_NAME, DATA_TYPE,
+                           CASE WHEN IS_NULLABLE = 'YES' THEN 1 ELSE 0 END,
+                           0
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_NAME = ?
+                    ORDER BY ORDINAL_POSITION
+                """, table_name)
+            for row in cursor.fetchall():
+                result.append(ColumnInfo(name=row[0], data_type=row[1], nullable=bool(row[2]), is_pk=bool(row[3])))
+        finally:
+            cursor.close()
+        return result
+
     def test_connection(self, config: ConnectionConfig) -> bool:
         conn = None
         try:

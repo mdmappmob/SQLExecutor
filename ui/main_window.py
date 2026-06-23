@@ -13,11 +13,12 @@ from application.use_cases import ConnectionUseCase, SQLExecutionUseCase
 from infrastructure.adapters.adapter_factory import AdapterFactory
 from infrastructure.logger import CSVLogger
 from infrastructure.config_manager import ConfigManager
-from ui.sql_editor import SQLEditor
+from ui.sql_editor import SQLEditor, strip_sql_comments
 from ui.result_panel import ResultPanel
 from ui.connection_dialog import ConnectionDialog
 from ui.import_dialog import ImportDialog
 from ui.parameter_dialog import ParameterDialog
+from ui.translate_dialog import TranslateDialog
 from ui.schema_browser import SchemaBrowser
 from ui.history_panel import HistoryPanel
 from ui.bookmarks_panel import BookmarksPanel
@@ -26,30 +27,8 @@ from infrastructure.session import save_session, load_session
 from infrastructure.version import __version__
 
 
-def _strip_comments(sql: str) -> str:
-    result = []
-    i = 0
-    n = len(sql)
-    while i < n:
-        if sql[i:i+2] == '/*':
-            end = sql.find('*/', i+2)
-            if end == -1:
-                break
-            i = end + 2
-            continue
-        if sql[i:i+2] == '--':
-            end = sql.find('\n', i+2)
-            if end == -1:
-                break
-            i = end + 1
-            continue
-        result.append(sql[i])
-        i += 1
-    return ''.join(result)
-
-
 def _is_single_table_select(sql: str) -> tuple[bool, str]:
-    cleaned = _strip_comments(sql).strip()
+    cleaned = strip_sql_comments(sql)
     upper = cleaned.upper()
 
     if not upper.startswith("SELECT"):
@@ -163,6 +142,16 @@ class MainWindow(QMainWindow):
 
         self.sql_editor.add_left_button(self.result_panel.save_btn)
         self.sql_editor.add_left_button(self.result_panel.export_btn)
+
+        self._translate_btn = QPushButton("Traduzir")
+        self._translate_btn.setToolTip("Traduzir SQL entre dialetos de banco")
+        self._translate_btn.setStyleSheet("""
+            QPushButton { background-color: #6f42c1; color: white; padding: 6px 14px;
+                          font-weight: bold; font-size: 11px; border-radius: 4px; }
+            QPushButton:hover { background-color: #5a32a3; }
+        """)
+        self._translate_btn.clicked.connect(self._on_translate)
+        self.sql_editor.add_left_button(self._translate_btn)
 
         self._schema_browser = SchemaBrowser()
         self._schema_browser.item_insert_requested.connect(self._on_schema_insert)
@@ -555,6 +544,18 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(I18N.main_window["csv_import_ok"], 10000)
         else:
             self.status_bar.showMessage(I18N.main_window["csv_import_cancel"])
+
+    def _on_translate(self):
+        sql = self.sql_editor._current_editor().toPlainText() if self.sql_editor._current_editor() else ""
+        if not sql.strip():
+            QMessageBox.information(self, "Traduzir SQL", "Nenhum SQL para traduzir.")
+            return
+        dialog = TranslateDialog(self._db_type, sql, self)
+        if dialog.exec():
+            result = dialog.get_result()
+            if result:
+                self.sql_editor._add_tab(result)
+                self.status_bar.showMessage("SQL traduzido inserido em nova aba", 5000)
 
     def _on_cancel(self):
         if self.sql_editor.is_search_visible():

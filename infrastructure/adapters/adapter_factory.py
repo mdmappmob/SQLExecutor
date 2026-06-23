@@ -16,6 +16,15 @@ class AdapterFactory:
         elif db_type == DBType.FIREBIRD:
             from infrastructure.adapters.firebird_adapter import FirebirdAdapter
             return FirebirdAdapter
+        elif db_type == DBType.MYSQL:
+            from infrastructure.adapters.mysql_adapter import MySQLAdapter
+            return MySQLAdapter
+        elif db_type == DBType.MARIADB:
+            from infrastructure.adapters.mariadb_adapter import MariaDBAdapter
+            return MariaDBAdapter
+        elif db_type == DBType.POSTGRESQL:
+            from infrastructure.adapters.postgresql_adapter import PostgreSQLAdapter
+            return PostgreSQLAdapter
         raise ValueError(f"Unsupported database type: {db_type.value}")
 
     @classmethod

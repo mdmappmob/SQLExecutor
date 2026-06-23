@@ -9,7 +9,6 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont
 
 from infrastructure.csv_parser import CsvParser, CsvProfile, BatchInsert
-from domain.value_objects import SQLText
 from infrastructure.i18n import I18N
 
 
@@ -182,18 +181,14 @@ class ImportDialog(QDialog):
         if not table:
             return
         try:
-            safe_table = table.replace("'", "''")
-            sql_text = (
-                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
-                f"WHERE TABLE_NAME = '{safe_table}' "
-                "ORDER BY ORDINAL_POSITION"
-            )
-            sql = SQLText(sql_text)
-            result = self._adapter.execute(sql)
-            if not result.success:
-                QMessageBox.warning(self, I18N.result_panel["export_error"], I18N.import_dialog["fetch_error"].format(msg=result.message))
+            cols = self._adapter.get_table_columns(table)
+            if not cols:
+                QMessageBox.warning(
+                    self, I18N.result_panel["export_error"],
+                    I18N.import_dialog["fetch_error"].format(msg="Tabela não encontrada ou sem colunas")
+                )
                 return
-            db_cols = [row[0] for row in result.rows]
+            db_cols = [c.name for c in cols]
             row_count = min(len(db_cols), self.mapping_table.rowCount())
             for i in range(row_count):
                 item = self.mapping_table.item(i, 1)
