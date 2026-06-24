@@ -136,7 +136,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
             )
 
     def get_schema(self) -> list[TableInfo]:
-        from domain.interfaces import TableInfo, ColumnInfo
+        from domain.interfaces import TableInfo, ColumnInfo, ForeignKeyInfo, IndexInfo
         tables: list[TableInfo] = []
         if not self._connection:
             return tables
@@ -171,7 +171,48 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 """, (tname, tname))
                 for c in cursor.fetchall():
                     columns.append(ColumnInfo(name=c[0], data_type=c[1], nullable=bool(c[2]), is_pk=bool(c[3])))
-                tables.append(TableInfo(name=tname, type=type_label, columns=columns))
+                foreign_keys: list[ForeignKeyInfo] = []
+                indexes: list[IndexInfo] = []
+                if type_label == "TABLE":
+                    try:
+                        cursor.execute("""
+                            SELECT
+                                ku.column_name,
+                                ref_ku.table_name,
+                                ref_ku.column_name,
+                                tc.constraint_name
+                            FROM information_schema.table_constraints tc
+                            JOIN information_schema.key_column_usage ku
+                                ON tc.constraint_name = ku.constraint_name
+                            JOIN information_schema.referential_constraints rc
+                                ON tc.constraint_name = rc.constraint_name
+                            JOIN information_schema.key_column_usage ref_ku
+                                ON rc.unique_constraint_name = ref_ku.constraint_name
+                            WHERE tc.constraint_type = 'FOREIGN KEY'
+                              AND tc.table_name = %s
+                        """, (tname,))
+                        for fk in cursor.fetchall():
+                            foreign_keys.append(ForeignKeyInfo(column=fk[0], ref_table=fk[1], ref_column=fk[2], fk_name=fk[3]))
+                    except Exception:
+                        pass
+                    try:
+                        cursor.execute("""
+                            SELECT indexname, indexdef
+                            FROM pg_indexes
+                            WHERE tablename = %s
+                              AND indexname NOT LIKE '%_pkey'
+                            ORDER BY indexname
+                        """, (tname,))
+                        for ix in cursor.fetchall():
+                            idx_name = ix[0]
+                            idx_def = ix[1]
+                            is_unique = "UNIQUE" in idx_def
+                            cols_part = idx_def.split("(")[-1].rstrip(")") if "(" in idx_def else ""
+                            idx_cols = [c.strip().strip('"') for c in cols_part.split(",")] if cols_part else []
+                            indexes.append(IndexInfo(name=idx_name, columns=idx_cols, is_unique=is_unique))
+                    except Exception:
+                        pass
+                tables.append(TableInfo(name=tname, type=type_label, columns=columns, foreign_keys=foreign_keys, indexes=indexes))
         finally:
             cursor.close()
         return tables

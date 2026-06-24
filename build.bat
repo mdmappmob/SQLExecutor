@@ -37,6 +37,8 @@ python -m PyInstaller ^
     --hidden-import sqlglot ^
     --hidden-import pymysql ^
     --hidden-import psycopg2 ^
+    --hidden-import keyring ^
+    --hidden-import keyring.backends.Windows ^
     --clean ^
     --noconfirm ^
     main.py

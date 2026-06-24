@@ -38,6 +38,8 @@ class _I18n:
         "auto_connected": "Conectado automaticamente a {server}\\{db}",
         "auto_connect_fail": "Conexão automática falhou (clique Conectar para tentar novamente)",
         "export_csv": "Exportar CSV",
+        "all_success": "Todos os {n} comando(s) executados com sucesso.",
+        "partial_success": "{ok} de {total} comando(s) executados com sucesso.",
     })
 
     connection_panel: dict = field(default_factory=lambda: {
@@ -113,6 +115,7 @@ class _I18n:
         "save_partial": "{ok} salva(s), {erros} erro(s).",
         "paste_done": "{n} célula(s) colada(s).",
         "edit_not_available": "Edição disponível apenas para SELECT de tabela única (sem JOIN/UNION/subquery).",
+        "tab_results_n": "Resultados {n}",
     })
 
     import_dialog: dict = field(default_factory=lambda: {

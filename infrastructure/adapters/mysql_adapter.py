@@ -136,7 +136,7 @@ class MySQLAdapter(DatabaseAdapter):
             )
 
     def get_schema(self) -> list[TableInfo]:
-        from domain.interfaces import TableInfo, ColumnInfo
+        from domain.interfaces import TableInfo, ColumnInfo, ForeignKeyInfo, IndexInfo
         tables: list[TableInfo] = []
         if not self._connection:
             return tables
@@ -164,7 +164,41 @@ class MySQLAdapter(DatabaseAdapter):
                 """, (tname,))
                 for c in cursor.fetchall():
                     columns.append(ColumnInfo(name=c[0], data_type=c[1], nullable=bool(c[2]), is_pk=bool(c[3])))
-                tables.append(TableInfo(name=tname, type=type_label, columns=columns))
+                foreign_keys: list[ForeignKeyInfo] = []
+                indexes: list[IndexInfo] = []
+                if type_label == "TABLE":
+                    try:
+                        cursor.execute("""
+                            SELECT COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME, CONSTRAINT_NAME
+                            FROM information_schema.KEY_COLUMN_USAGE
+                            WHERE TABLE_SCHEMA = DATABASE()
+                              AND TABLE_NAME = %s
+                              AND REFERENCED_TABLE_NAME IS NOT NULL
+                        """, (tname,))
+                        for fk in cursor.fetchall():
+                            foreign_keys.append(ForeignKeyInfo(column=fk[0], ref_table=fk[1], ref_column=fk[2], fk_name=fk[3]))
+                    except Exception:
+                        pass
+                    try:
+                        cursor.execute("""
+                            SELECT INDEX_NAME, COLUMN_NAME, NON_UNIQUE, SEQ_IN_INDEX
+                            FROM information_schema.STATISTICS
+                            WHERE TABLE_SCHEMA = DATABASE()
+                              AND TABLE_NAME = %s
+                              AND INDEX_NAME != 'PRIMARY'
+                            ORDER BY INDEX_NAME, SEQ_IN_INDEX
+                        """, (tname,))
+                        idx_map: dict[str, tuple[list[str], bool]] = {}
+                        for ix in cursor.fetchall():
+                            iname = ix[0]
+                            if iname not in idx_map:
+                                idx_map[iname] = ([], ix[2] == 0)
+                            idx_map[iname][0].append(ix[1])
+                        for iname, (icols, iunique) in idx_map.items():
+                            indexes.append(IndexInfo(name=iname, columns=icols, is_unique=iunique))
+                    except Exception:
+                        pass
+                tables.append(TableInfo(name=tname, type=type_label, columns=columns, foreign_keys=foreign_keys, indexes=indexes))
         finally:
             cursor.close()
         return tables

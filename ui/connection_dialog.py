@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QPushButton, QRadioButton, QButtonGroup,
     QLabel, QSpinBox, QComboBox, QMessageBox, QApplication,
-    QWidget
+    QWidget, QTextEdit
 )
 from PySide6.QtCore import Qt
 
@@ -131,10 +131,19 @@ class ConnectionDialog(QDialog):
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
 
-        self.error_label = QLabel("")
-        self.error_label.setStyleSheet("color: #d32f2f; font-weight: bold;")
-        self.error_label.setVisible(False)
-        layout.addWidget(self.error_label)
+        self.error_text = QTextEdit()
+        self.error_text.setReadOnly(True)
+        self.error_text.setMinimumHeight(40)
+        self.error_text.setMaximumHeight(120)
+        self.error_text.setStyleSheet("""
+            QTextEdit {
+                color: #d32f2f; font-weight: bold; font-family: Consolas, monospace;
+                font-size: 11px; border: 1px solid #d32f2f; padding: 6px;
+                background-color: #2d1b1b;
+            }
+        """)
+        self.error_text.setVisible(False)
+        layout.addWidget(self.error_text)
 
         self._update_ui_for_db_type()
 
@@ -173,7 +182,7 @@ class ConnectionDialog(QDialog):
         self.password_edit.clear()
         self.windows_auth_rb.setChecked(True)
         self.timeout_spin.setValue(30)
-        self.error_label.setVisible(False)
+        self.error_text.setVisible(False)
         self._update_ui_for_db_type()
 
     def _update_ui_for_db_type(self):
@@ -280,10 +289,10 @@ class ConnectionDialog(QDialog):
         if success:
             QMessageBox.information(self, I18N.main_window["test_title"],
                                     I18N.main_window["test_ok"])
-            self.error_label.setVisible(False)
+            self.error_text.setVisible(False)
         else:
-            self.error_label.setText(I18N.main_window["test_fail_msg"])
-            self.error_label.setVisible(True)
+            self.error_text.setPlainText(I18N.main_window["test_fail_msg"])
+            self.error_text.setVisible(True)
 
     def _on_connect(self):
         config = self.get_config()
@@ -313,5 +322,5 @@ class ConnectionDialog(QDialog):
             self._config = config
             self.accept()
         else:
-            self.error_label.setText(session.error_message)
-            self.error_label.setVisible(True)
+            self.error_text.setPlainText(session.error_message)
+            self.error_text.setVisible(True)

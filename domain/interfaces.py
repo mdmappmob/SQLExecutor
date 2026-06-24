@@ -13,10 +13,27 @@ class ColumnInfo:
 
 
 @dataclass
+class ForeignKeyInfo:
+    column: str
+    ref_table: str
+    ref_column: str
+    fk_name: str = ""
+
+
+@dataclass
+class IndexInfo:
+    name: str
+    columns: list[str]
+    is_unique: bool = False
+
+
+@dataclass
 class TableInfo:
     name: str
     type: str = "TABLE"  # TABLE | VIEW | PROCEDURE
     columns: list[ColumnInfo] = field(default_factory=list)
+    foreign_keys: list[ForeignKeyInfo] = field(default_factory=list)
+    indexes: list[IndexInfo] = field(default_factory=list)
 
 
 class DatabaseAdapter(ABC):

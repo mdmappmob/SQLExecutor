@@ -13,12 +13,13 @@ from application.use_cases import ConnectionUseCase, SQLExecutionUseCase
 from infrastructure.adapters.adapter_factory import AdapterFactory
 from infrastructure.logger import CSVLogger
 from infrastructure.config_manager import ConfigManager
-from ui.sql_editor import SQLEditor, strip_sql_comments
+from ui.sql_editor import SQLEditor, strip_sql_comments, split_sql_statements
 from ui.result_panel import ResultPanel
 from ui.connection_dialog import ConnectionDialog
 from ui.import_dialog import ImportDialog
 from ui.parameter_dialog import ParameterDialog
 from ui.translate_dialog import TranslateDialog
+from ui.dialogs import show_critical
 from ui.schema_browser import SchemaBrowser
 from ui.history_panel import HistoryPanel
 from ui.bookmarks_panel import BookmarksPanel
@@ -79,7 +80,7 @@ class MainWindow(QMainWindow):
         self._restore_session()
 
     def _show_error(self, title: str, message: str):
-        QMessageBox.critical(self, title, message)
+        show_critical(self, title, message)
 
     def _build_menu_bar(self):
         menubar = self.menuBar()
@@ -134,6 +135,7 @@ class MainWindow(QMainWindow):
         self.sql_editor = SQLEditor()
         self.result_panel = ResultPanel()
         self.result_panel.set_adapter(self._adapter)
+        self.result_panel.set_db_type(self._db_type)
         splitter.addWidget(self.sql_editor)
         splitter.addWidget(self.result_panel)
         splitter.setStretchFactor(0, 1)
@@ -146,7 +148,7 @@ class MainWindow(QMainWindow):
         self._translate_btn = QPushButton("Traduzir")
         self._translate_btn.setToolTip("Traduzir SQL entre dialetos de banco")
         self._translate_btn.setStyleSheet("""
-            QPushButton { background-color: #6f42c1; color: white; padding: 6px 14px;
+            QPushButton { background-color: #6f42c1; color: white; padding: 8px 16px;
                           font-weight: bold; font-size: 11px; border-radius: 4px; }
             QPushButton:hover { background-color: #5a32a3; }
         """)
@@ -154,7 +156,10 @@ class MainWindow(QMainWindow):
         self.sql_editor.add_left_button(self._translate_btn)
 
         self._schema_browser = SchemaBrowser()
+        self._schema_browser.set_db_type(self._db_type)
         self._schema_browser.item_insert_requested.connect(self._on_schema_insert)
+        self._schema_browser.script_generated.connect(self._on_script_generated)
+        self.result_panel.script_generated.connect(self._on_script_generated)
         self._schema_dock = QDockWidget("Navegador", self)
         self._schema_dock.setWidget(self._schema_browser)
         self._schema_dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
@@ -261,6 +266,8 @@ class MainWindow(QMainWindow):
             self._disconnect_action.setEnabled(True)
             self._file_menu.setEnabled(True)
             self._schema_browser.set_adapter(self._adapter)
+            self._schema_browser.set_db_type(self._db_type)
+            self.result_panel.set_db_type(self._db_type)
         else:
             self._conn_label.setText(I18N.connection_panel["status_disconnected"])
             self._conn_label.setStyleSheet("color: #888; font-weight: bold;")
@@ -310,7 +317,7 @@ class MainWindow(QMainWindow):
             config = self._load_config()
             dialog = ConnectionDialog(self, config)
         except Exception as e:
-            QMessageBox.critical(self, "Erro", f"Falha ao abrir diálogo de conexão:\n{e}")
+            show_critical(self, "Erro", f"Falha ao abrir diálogo de conexão:\n{e}")
             return
         if dialog.exec() != QDialog.Accepted:
             return
@@ -386,7 +393,7 @@ class MainWindow(QMainWindow):
                 file_path.split("\\")[-1]
             )
         except Exception as e:
-            QMessageBox.critical(self, "Erro ao Abrir", str(e))
+            show_critical(self, "Erro ao Abrir", str(e))
 
     def _extract_param_info(self, sql: str) -> list[tuple[str, str]]:
         matches = re.finditer(r'(?<!:):([a-zA-Z_]\w*)', sql)
@@ -479,28 +486,30 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, I18N.main_window["validation_title"], I18N.main_window["no_sql"])
             return
 
+        statements = split_sql_statements(clean_base)
+        if not statements:
+            return
+
         params = self._extract_parameters(sql_text)
         if params:
             dialog = ParameterDialog(params, self, self._last_parameter_values)
             if dialog.exec() != QDialog.Accepted:
                 return
             self._last_parameter_values = dialog.get_values()
-            sql_to_execute = self._inject_parameters(clean_base, self._last_parameter_values)
-        else:
-            sql_to_execute = clean_base
+            statements = [self._inject_parameters(s, self._last_parameter_values) for s in statements]
 
-        sql_upper = sql_to_execute.strip().upper()
-        is_delete = sql_upper.startswith("DELETE")
-        is_update = sql_upper.startswith("UPDATE")
-
-        if (is_delete or is_update) and "WHERE" not in sql_upper:
-            reply = QMessageBox.warning(
-                self, I18N.main_window["confirm_title"],
-                I18N.main_window["confirm_nowhere"].format(cmd=sql_upper.split()[0]),
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-            )
-            if reply == QMessageBox.No:
-                return
+        for stmt in statements:
+            sql_upper = stmt.strip().upper()
+            is_delete = sql_upper.startswith("DELETE")
+            is_update = sql_upper.startswith("UPDATE")
+            if (is_delete or is_update) and "WHERE" not in sql_upper:
+                reply = QMessageBox.warning(
+                    self, I18N.main_window["confirm_title"],
+                    I18N.main_window["confirm_nowhere"].format(cmd=sql_upper.split()[0]),
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+                )
+                if reply == QMessageBox.No:
+                    return
 
         try:
             self.status_bar.showMessage(I18N.main_window["executing"])
@@ -510,23 +519,21 @@ class MainWindow(QMainWindow):
 
             self.sql_editor.add_to_history(sql_text)
 
-            result = self._execution_uc.execute(sql_to_execute)
+            results = []
+            for stmt in statements:
+                result = self._execution_uc.execute(stmt)
+                results.append(result)
 
-            if result.success:
-                if result.columns:
-                    is_editable, table_name = _is_single_table_select(sql_text)
-                    self.result_panel.show_results(
-                        result.columns, result.rows, result.message,
-                        editable=is_editable, table_name=table_name
-                    )
-                    self.sql_editor.set_rows_returned(result.rows_affected)
-                else:
-                    self.result_panel.show_message(result.message)
-                    self.sql_editor.set_rows_affected(result.rows_affected)
-                self.status_bar.showMessage(result.message, 10000)
+            self.result_panel.show_multi_results(results, sql_text)
+
+            success_count = sum(1 for r in results if r.success)
+            total = len(results)
+            if success_count == total:
+                msg = I18N.main_window["all_success"].format(n=total)
             else:
-                self.result_panel.show_error(result.message)
-                self.status_bar.showMessage(I18N.main_window["execution_failed"])
+                msg = I18N.main_window["partial_success"].format(ok=success_count, total=total)
+            self.status_bar.showMessage(msg, 10000)
+
         except ValueError as e:
             self.result_panel.show_error(str(e))
             self.status_bar.showMessage(I18N.main_window["validation_error"])
@@ -573,6 +580,9 @@ class MainWindow(QMainWindow):
             cursor.insertText(name)
             editor.setTextCursor(cursor)
             editor.setFocus()
+
+    def _on_script_generated(self, script: str):
+        self.sql_editor.add_tab("Script", script)
 
     def _on_history_load(self, sql: str):
         editor = self.sql_editor._current_editor()

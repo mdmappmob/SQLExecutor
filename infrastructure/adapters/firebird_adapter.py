@@ -148,7 +148,7 @@ class FirebirdAdapter(DatabaseAdapter):
             )
 
     def get_schema(self) -> list[TableInfo]:
-        from domain.interfaces import TableInfo, ColumnInfo
+        from domain.interfaces import TableInfo, ColumnInfo, ForeignKeyInfo, IndexInfo
         tables: list[TableInfo] = []
         if not self._connection:
             return tables
@@ -192,7 +192,56 @@ class FirebirdAdapter(DatabaseAdapter):
                     """, (tname, tname))
                     for c in cursor.fetchall():
                         columns.append(ColumnInfo(name=c[0], data_type=c[1], nullable=not bool(c[2]), is_pk=bool(c[3])))
-                    tables.append(TableInfo(name=tname, type=type_label, columns=columns))
+                    foreign_keys: list[ForeignKeyInfo] = []
+                    indexes: list[IndexInfo] = []
+                    if type_label == "TABLE":
+                        try:
+                            cursor.execute("""
+                                SELECT
+                                    TRIM(seg.RDB$FIELD_NAME),
+                                    TRIM(ref_rel.RDB$RELATION_NAME),
+                                    TRIM(ref_seg.RDB$FIELD_NAME),
+                                    TRIM(rc.RDB$CONSTRAINT_NAME)
+                                FROM RDB$RELATION_CONSTRAINTS rc
+                                JOIN RDB$REF_CONSTRAINTS refc ON rc.RDB$CONSTRAINT_NAME = refc.RDB$CONSTRAINT_NAME
+                                JOIN RDB$INDEX_SEGMENTS seg ON rc.RDB$INDEX_NAME = seg.RDB$INDEX_NAME
+                                JOIN RDB$RELATION_CONSTRAINTS ref_rc ON refc.RDB$PRIMARY_KEY = ref_rc.RDB$CONSTRAINT_NAME
+                                JOIN RDB$INDEX_SEGMENTS ref_seg ON ref_rc.RDB$INDEX_NAME = ref_seg.RDB$INDEX_NAME
+                                WHERE rc.RDB$CONSTRAINT_TYPE = 'FOREIGN KEY'
+                                  AND rc.RDB$RELATION_NAME = ?
+                                  AND seg.RDB$FIELD_POSITION = ref_seg.RDB$FIELD_POSITION
+                            """, (tname,))
+                            for fk in cursor.fetchall():
+                                foreign_keys.append(ForeignKeyInfo(column=fk[0], ref_table=fk[1], ref_column=fk[2], fk_name=fk[3]))
+                        except Exception:
+                            pass
+                        try:
+                            cursor.execute("""
+                                SELECT
+                                    TRIM(i.RDB$INDEX_NAME),
+                                    TRIM(s.RDB$FIELD_NAME),
+                                    i.RDB$UNIQUE_FLAG,
+                                    s.RDB$FIELD_POSITION
+                                FROM RDB$INDICES i
+                                JOIN RDB$INDEX_SEGMENTS s ON i.RDB$INDEX_NAME = s.RDB$INDEX_NAME
+                                LEFT JOIN RDB$RELATION_CONSTRAINTS rc
+                                    ON i.RDB$INDEX_NAME = rc.RDB$INDEX_NAME
+                                    AND rc.RDB$CONSTRAINT_TYPE = 'PRIMARY KEY'
+                                WHERE i.RDB$RELATION_NAME = ?
+                                  AND rc.RDB$CONSTRAINT_NAME IS NULL
+                                ORDER BY i.RDB$INDEX_NAME, s.RDB$FIELD_POSITION
+                            """, (tname,))
+                            idx_map: dict[str, tuple[list[str], bool]] = {}
+                            for ix in cursor.fetchall():
+                                iname = ix[0]
+                                if iname not in idx_map:
+                                    idx_map[iname] = ([], bool(ix[2]))
+                                idx_map[iname][0].append(ix[1])
+                            for iname, (icols, iunique) in idx_map.items():
+                                indexes.append(IndexInfo(name=iname, columns=icols, is_unique=iunique))
+                        except Exception:
+                            pass
+                    tables.append(TableInfo(name=tname, type=type_label, columns=columns, foreign_keys=foreign_keys, indexes=indexes))
         finally:
             cursor.close()
         return tables

@@ -10,6 +10,7 @@ from PySide6.QtGui import QFont
 
 from infrastructure.csv_parser import CsvParser, CsvProfile, BatchInsert
 from infrastructure.i18n import I18N
+from ui.dialogs import show_critical
 
 
 class ImportDialog(QDialog):
@@ -207,7 +208,7 @@ class ImportDialog(QDialog):
             else:
                 self.mapping_info.setText(I18N.import_dialog["fetch_ok"].format(table=table, n=len(db_cols)))
         except Exception as e:
-            QMessageBox.critical(self, I18N.import_dialog["fetch_btn"], I18N.import_dialog["fetch_critical"].format(error=e))
+            show_critical(self, I18N.import_dialog["fetch_btn"], I18N.import_dialog["fetch_critical"].format(error=e))
 
     def _show_preview(self, profile: CsvProfile):
         display_cols = [
@@ -279,7 +280,7 @@ class ImportDialog(QDialog):
                 batch_size=self.batch_size_spin.value(),
             )
         except Exception as e:
-            QMessageBox.critical(self, I18N.import_dialog["parse_error"], str(e))
+            show_critical(self, I18N.import_dialog["parse_error"], str(e))
             return
 
         total = len(batch.params)

@@ -9,7 +9,7 @@
 | `ui/connection_panel.py` | Adicionar um `QComboBox` com os bancos suportados (MSSQL, Oracle, Firebird, MySQL, MariaDB, PostgreSQL). O seletor deve vir antes dos campos de conexão, pois o tipo de banco determina os campos seguintes (ex: Oracle precisa de `service_name` ou `SID`; Firebird usa caminho de arquivo `.fdb`). |
 | `ui/main_window.py` | O `_on_connect` precisa passar o tipo de banco selecionado para o use case. |
 | `application/use_cases.py` | `ConnectionUseCase.connect()` e `ConnectionUseCase.test_connection()` precisam receber o tipo de banco para instanciar o adapter correto. |
-| `infrastructure/config_manager.py` | Adicionar campo `db_type` no `config.ini` (seção `[Connection]`) e nos métodos `load()`/`save()`/`_defaults()`. |
+| `infrastructure/config_manager.py` | Gerencia config em `%APPDATA%/SQLExecutor/sqlexecutor.ini` + senha no Credential Manager via `keyring`. Campo `db_type` na seção `[Connection]`. |
 | `domain/value_objects.py` | `ConnectionConfig` precisa de um campo `db_type: str`. |
 | `domain/interfaces.py` | A interface `DatabaseAdapter` já está genérica — não precisa de alterações. |
 | `infrastructure/mssql_adapter.py` | Renomear para `adapters/mssql_adapter.py` (dentro de nova pasta) ou manter como está e criar os novos no mesmo padrão. |

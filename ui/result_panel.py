@@ -7,12 +7,13 @@ from decimal import Decimal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QTextEdit, QTabWidget, QLabel, QPushButton, QFileDialog, QMessageBox,
-    QComboBox, QApplication, QMenu
+    QComboBox, QApplication, QMenu, QInputDialog
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QColor
+from PySide6.QtGui import QFont, QColor, QAction
 
 from infrastructure.i18n import I18N
+from ui.dialogs import show_critical
 
 
 _CHANGED_COLOR = QColor("#fff3cd")
@@ -91,6 +92,7 @@ def _format_display_value(val):
 
 class ResultPanel(QWidget):
     status_message = Signal(str, int)
+    script_generated = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -106,6 +108,7 @@ class ResultPanel(QWidget):
         self._original_row_count = 0
         self._column_types: dict[str, str] = {}
         self._adapter = None
+        self._db_type = "mssql"
         self._italic_font = QFont("Consolas", 9)
         self._italic_font.setItalic(True)
         self._normal_font = QFont("Consolas", 9)
@@ -113,6 +116,9 @@ class ResultPanel(QWidget):
 
     def set_adapter(self, adapter):
         self._adapter = adapter
+
+    def set_db_type(self, db_type: str):
+        self._db_type = db_type
 
     def _fetch_column_types(self):
         self._column_types = {}
@@ -192,8 +198,8 @@ class ResultPanel(QWidget):
         self.save_btn.setVisible(False)
         self.save_btn.setStyleSheet("""
             QPushButton {
-                background-color: #ffc107; color: #333; padding: 8px 14px;
-                font-size: 10px; border-radius: 4px; font-weight: bold;
+                background-color: #ffc107; color: #333; padding: 8px 16px;
+                font-size: 11px; border-radius: 4px; font-weight: bold;
             }
             QPushButton:hover { background-color: #e0a800; }
             QPushButton:disabled { color: #aaa; background-color: #eee; }
@@ -204,8 +210,8 @@ class ResultPanel(QWidget):
         self.export_btn.setEnabled(False)
         self.export_btn.setStyleSheet("""
             QPushButton {
-                background-color: #17a2b8; color: white; padding: 8px 12px;
-                font-size: 10px; border-radius: 4px; font-weight: bold;
+                background-color: #17a2b8; color: white; padding: 8px 16px;
+                font-size: 11px; border-radius: 4px; font-weight: bold;
             }
             QPushButton:hover { background-color: #138496; }
             QPushButton:disabled { color: #aaa; background-color: #ccc; }
@@ -234,6 +240,8 @@ class ResultPanel(QWidget):
         """)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._on_table_context_menu)
         self.table.cellChanged.connect(self._on_cell_changed)
         self.table.paste_occurred.connect(self._on_paste)
 
@@ -406,6 +414,92 @@ class ResultPanel(QWidget):
         self.page_next_btn.setEnabled(has_pages and self._current_page < self._total_pages - 1)
         self.page_last_btn.setEnabled(has_pages and self._current_page < self._total_pages - 1)
 
+    def _quote_identifier(self, name: str) -> str:
+        if self._db_type == "mssql":
+            return f"[{name}]"
+        if self._db_type in ("mysql", "mariadb"):
+            return f"`{name}`"
+        return f'"{name}"'
+
+    def _format_sql_value(self, val) -> str:
+        if val is None:
+            return "NULL"
+        if isinstance(val, bool):
+            return "1" if val else "0"
+        if isinstance(val, (int, float, Decimal)):
+            return str(val)
+        return "'" + str(val).replace("'", "''") + "'"
+
+    def _generate_insert_script(self) -> str:
+        if not self._last_columns or not self._last_rows:
+            return ""
+        table_name = self._table_name
+        if not table_name:
+            table_name, ok = QInputDialog.getText(
+                self, "Gerar INSERT", "Nome da tabela:"
+            )
+            if not ok or not table_name.strip():
+                return ""
+            table_name = table_name.strip()
+        col_names = [self._quote_identifier(c) for c in self._last_columns]
+        lines = []
+        for row in self._last_rows:
+            values = ", ".join(self._format_sql_value(v) for v in row)
+            lines.append(
+                f"INSERT INTO {self._quote_identifier(table_name)} "
+                f"({', '.join(col_names)}) VALUES ({values});"
+            )
+        return "\n".join(lines)
+
+    def _generate_update_script(self) -> str:
+        if not self._last_columns or not self._last_rows:
+            return ""
+        table_name = self._table_name
+        if not table_name:
+            table_name, ok = QInputDialog.getText(
+                self, "Gerar UPDATE", "Nome da tabela:"
+            )
+            if not ok or not table_name.strip():
+                return ""
+            table_name = table_name.strip()
+        lines = []
+        for row in self._last_rows:
+            set_clause = ", ".join(
+                f"{self._quote_identifier(self._last_columns[i])} = {self._format_sql_value(row[i])}"
+                for i in range(len(self._last_columns))
+            )
+            where_clause = " AND ".join(
+                f"{self._quote_identifier(self._last_columns[i])} = {self._format_sql_value(row[i])}"
+                for i in range(len(self._last_columns))
+            )
+            lines.append(
+                f"UPDATE {self._quote_identifier(table_name)} "
+                f"SET {set_clause} WHERE {where_clause};"
+            )
+        return "\n".join(lines)
+
+    def _on_table_context_menu(self, pos):
+        if not self._last_columns or not self._last_rows:
+            return
+        menu = QMenu(self)
+        insert_action = QAction("Copiar como INSERT", self)
+        insert_action.triggered.connect(self._on_copy_insert)
+        menu.addAction(insert_action)
+        update_action = QAction("Copiar como UPDATE", self)
+        update_action.triggered.connect(self._on_copy_update)
+        menu.addAction(update_action)
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _on_copy_insert(self):
+        script = self._generate_insert_script()
+        if script:
+            self.script_generated.emit(script)
+
+    def _on_copy_update(self):
+        script = self._generate_update_script()
+        if script:
+            self.script_generated.emit(script)
+
     def show_results(self, columns: list[str], rows: list[list], message: str,
                      editable: bool = False, table_name: str = ""):
         self._last_columns = columns
@@ -440,6 +534,66 @@ class ResultPanel(QWidget):
         self._go_to_page(0)
         self.message_display.setPlainText(message)
         self.tabs.setCurrentIndex(0)
+
+    def show_multi_results(self, results: list, original_sql: str):
+        self._clear_edit_state()
+
+        while self.tabs.count() > 2:
+            w = self.tabs.widget(2)
+            self.tabs.removeTab(2)
+            w.deleteLater()
+
+        self.tabs.setTabText(0, I18N.result_panel["tab_results"])
+
+        self.export_btn.setEnabled(False)
+        self.save_btn.setVisible(False)
+
+        messages = []
+        first_result = None
+        result_tabs = 0
+
+        for i, r in enumerate(results):
+            if r.success and r.columns:
+                result_tabs += 1
+                if first_result is None:
+                    first_result = r
+                else:
+                    table = _EditableTable()
+                    table.setAlternatingRowColors(True)
+                    table.setStyleSheet(self.table.styleSheet())
+                    table.setEditTriggers(QTableWidget.NoEditTriggers)
+                    table.setSelectionBehavior(QTableWidget.SelectRows)
+                    table.setColumnCount(len(r.columns))
+                    table.setHorizontalHeaderLabels(r.columns)
+                    table.setRowCount(len(r.rows))
+                    for row_idx, row_data in enumerate(r.rows):
+                        for col_idx, val in enumerate(row_data):
+                            item = QTableWidgetItem(_format_display_value(val))
+                            if val is None:
+                                item.setForeground(_NULL_COLOR)
+                            table.setItem(row_idx, col_idx, item)
+                    table.resizeColumnsToContents()
+                    self.tabs.insertTab(
+                        self.tabs.count() - 1, table,
+                        I18N.result_panel["tab_results_n"].format(n=result_tabs)
+                    )
+                messages.append(r.message)
+            elif r.success:
+                messages.append(r.message)
+            else:
+                messages.append(f"[ERRO] {r.message}")
+
+        if first_result:
+            self.show_results(
+                first_result.columns, first_result.rows,
+                "\n".join(messages),
+                editable=False,
+                table_name=""
+            )
+            if result_tabs > 1:
+                self.tabs.setTabText(0, I18N.result_panel["tab_results_n"].format(n=1))
+        else:
+            self.show_message("\n".join(messages))
 
     def show_message(self, message: str):
         self._clear_edit_state()
@@ -573,11 +727,11 @@ class ResultPanel(QWidget):
             return
 
         if not self._adapter or not self._adapter.is_connected():
-            QMessageBox.critical(self, "Erro", "Não conectado ao banco de dados.")
+            show_critical(self, "Erro", "Não conectado ao banco de dados.")
             return
 
         if not self._table_name:
-            QMessageBox.critical(self, "Erro", "Nome da tabela não disponível.")
+            show_critical(self, "Erro", "Nome da tabela não disponível.")
             return
 
         conn = None
@@ -679,8 +833,8 @@ class ResultPanel(QWidget):
                 )
 
         except Exception as e:
-            QMessageBox.critical(self, I18N.result_panel["save_confirm_title"],
-                                 I18N.result_panel["save_error"].format(msg=str(e)))
+            show_critical(self, I18N.result_panel["save_confirm_title"],
+                          I18N.result_panel["save_error"].format(msg=str(e)))
 
     def _export_csv(self):
         if not self._last_columns:
@@ -707,14 +861,14 @@ class ResultPanel(QWidget):
                 I18N.result_panel["export_ok"].format(n=len(self._last_rows), path=file_path), 5000
             )
         except Exception as e:
-            QMessageBox.critical(self, I18N.result_panel["export_error"], str(e))
+            show_critical(self, I18N.result_panel["export_error"], str(e))
 
     def _export_excel(self):
         try:
             from openpyxl import Workbook
         except ImportError:
-            QMessageBox.critical(self, I18N.result_panel["export_error"],
-                                 "Pacote 'openpyxl' necessário para exportar Excel.")
+            show_critical(self, I18N.result_panel["export_error"],
+                          "Pacote 'openpyxl' necessário para exportar Excel.")
             return
 
         if not self._last_columns:
@@ -764,4 +918,4 @@ class ResultPanel(QWidget):
                 I18N.result_panel["export_ok"].format(n=len(self._last_rows), path=file_path), 5000
             )
         except Exception as e:
-            QMessageBox.critical(self, I18N.result_panel["export_error"], str(e))
+            show_critical(self, I18N.result_panel["export_error"], str(e))

@@ -173,7 +173,7 @@ class MSSQLAdapter(DatabaseAdapter):
             )
 
     def get_schema(self) -> list[TableInfo]:
-        from domain.interfaces import TableInfo, ColumnInfo
+        from domain.interfaces import TableInfo, ColumnInfo, ForeignKeyInfo, IndexInfo
         tables: list[TableInfo] = []
         if not self._connection:
             return tables
@@ -203,7 +203,51 @@ class MSSQLAdapter(DatabaseAdapter):
                     """, tname, tname)
                     for c in cursor.fetchall():
                         columns.append(ColumnInfo(name=c[0], data_type=c[1], nullable=bool(c[2]), is_pk=bool(c[3])))
-                    tables.append(TableInfo(name=tname, type=type_label, columns=columns))
+                    foreign_keys: list[ForeignKeyInfo] = []
+                    indexes: list[IndexInfo] = []
+                    try:
+                        cursor.execute("""
+                            SELECT
+                                ku.COLUMN_NAME,
+                                ref_ku.TABLE_NAME,
+                                ref_ku.COLUMN_NAME,
+                                tc.CONSTRAINT_NAME
+                            FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE ku
+                                ON tc.CONSTRAINT_NAME = ku.CONSTRAINT_NAME
+                            JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+                                ON tc.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+                            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE ref_ku
+                                ON rc.UNIQUE_CONSTRAINT_NAME = ref_ku.CONSTRAINT_NAME
+                            WHERE tc.CONSTRAINT_TYPE = 'FOREIGN KEY'
+                              AND tc.TABLE_NAME = ?
+                        """, tname)
+                        for fk in cursor.fetchall():
+                            foreign_keys.append(ForeignKeyInfo(column=fk[0], ref_table=fk[1], ref_column=fk[2], fk_name=fk[3]))
+                    except Exception:
+                        pass
+                    try:
+                        cursor.execute("""
+                            SELECT i.name, col.name, i.is_unique, ic.key_ordinal
+                            FROM sys.indexes i
+                            JOIN sys.index_columns ic
+                                ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                            JOIN sys.columns col
+                                ON ic.object_id = col.object_id AND ic.column_id = col.column_id
+                            WHERE i.object_id = OBJECT_ID(?)
+                            ORDER BY i.name, ic.key_ordinal
+                        """, tname)
+                        idx_map: dict[str, tuple[list[str], bool]] = {}
+                        for ix in cursor.fetchall():
+                            iname = ix[0]
+                            if iname not in idx_map:
+                                idx_map[iname] = ([], bool(ix[2]))
+                            idx_map[iname][0].append(ix[1])
+                        for iname, (icols, iunique) in idx_map.items():
+                            indexes.append(IndexInfo(name=iname, columns=icols, is_unique=iunique))
+                    except Exception:
+                        pass
+                    tables.append(TableInfo(name=tname, type=type_label, columns=columns, foreign_keys=foreign_keys, indexes=indexes))
         finally:
             cursor.close()
         return tables

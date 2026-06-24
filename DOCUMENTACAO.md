@@ -1,6 +1,6 @@
 # SQL Executor — Documentação Completa
 
-**Versão:** 1.1.0  
+**Versão:** 1.2.0  
 **Build:** 2026.06.23  
 **Autor:** Márcio Donizeti Marcondes
 
@@ -13,9 +13,16 @@
 3. [Interface Principal](#3-interface-principal)
 4. [Gerenciamento de Conexão](#4-gerenciamento-de-conexão)
 5. [Editor SQL](#5-editor-sql)
+    - 5.3 [Multi-query (;)](#53-executar-sql)
 6. [Painel de Resultados](#6-painel-de-resultados)
+    - 6.6 [Geração de scripts (INSERT/UPDATE)](#66-geração-de-scripts-insert--update)
+    - 6.8 [Mensagens de erro copiáveis](#68-mensagens-de-erro)
 7. [Importação CSV](#7-importação-csv)
 8. [Navegador de Schema](#8-navegador-de-schema)
+    - 8.1 [Árvore de objetos com FK e índices](#81-árvore-de-objetos)
+    - 8.2 [Geração de DDL (CREATE/DROP/SELECT)](#82-ações-disponíveis)
+    - 8.3 [PK, FK e índices no CREATE TABLE](#83-ddl-gerado-create-table)
+    - 8.4 [Indicador de carregamento](#84-indicador-de-carregamento)
 9. [Histórico](#9-histórico)
 10. [Favoritos (Bookmarks)](#10-favoritos-bookmarks)
 11. [Tradutor SQL](#11-tradutor-sql)
@@ -94,6 +101,7 @@ pip install -r requirements.txt
 | `psycopg2-binary` | Driver PostgreSQL |
 | `openpyxl` | Exportação para Excel |
 | `sqlglot` | Parser SQL e tradutor entre dialetos |
+| `keyring` | Armazenamento seguro de senhas no Credential Manager do SO |
 
 ### 2.4 Executar
 
@@ -114,12 +122,12 @@ python main.py script.sql
 A interface é dividida em:
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│  Menu: Conexão | Arquivo                                 │
-├──────────────────────────────────────────────────────────┤
+┌────────────────────────────────────────────────────────────┐
+│  Menu: Conexão | Arquivo                                   │
+├────────────────────────────────────────────────────────────┤
 │  [Importar CSV] [Traduzir] [Salvar] [Exportar]  [▶ Executar] │
-├───────────┬──────────────────────────────────────────────┤
-│ Navegador │  Editor SQL (abas)                           │
+├─────────────┬──────────────────────────────────────────────┤
+│ Navegador   │  Editor SQL (abas)                           │
 │ (esquerda)│                                              │
 │           ├──────────────────────────────────────────────┤
 │           │  Resultados / Mensagens (abas)               │
@@ -137,7 +145,19 @@ A interface é dividida em:
 
 Todos os painéis podem ser movidos, fechados ou redimensionados.
 
-### 3.2 Barra de status
+### 3.2 Barra de ferramentas
+
+| Botão | Ação |
+|---|---|
+| **Importar CSV** | Abre o diálogo de importação CSV |
+| **Traduzir** | Abre o diálogo de tradução SQL |
+| **Salvar** | Salva o SQL da aba atual |
+| **Exportar** | Exporta resultados para CSV ou Excel |
+| **▶ Executar** | Executa o SQL da aba atual |
+
+Os botões possuem altura padronizada com `padding: 8px 16px; font-size: 11px` para consistência visual.
+
+### 3.3 Barra de status
 
 Exibe:
 - Tipo de banco conectado (ex: `[MSSQL]`)
@@ -167,7 +187,7 @@ Exibe:
 
 ### 4.2 Auto-conexão
 
-Se o `config.ini` tiver uma configuração salva, o SQL Executor tenta conectar automaticamente ao iniciar.
+Se uma configuração de conexão estiver salva, o SQL Executor tenta conectar automaticamente ao iniciar.
 
 ### 4.3 Sessão persistente
 
@@ -177,6 +197,10 @@ Ao conectar com sucesso, a sessão é salva em `config/session.json`. Na próxim
 
 - Clique no botão **X** vermelho na barra de status
 - Ou **Conexão > Desconectar**
+
+### 4.5 Mensagens de erro copiáveis
+
+Todas as mensagens de erro (inclusive do diálogo de conexão) são exibidas em componentes de texto selecionável (`QTextEdit`), permitindo copiar o conteúdo completo com `Ctrl+C` para análise ou suporte.
 
 ---
 
@@ -202,6 +226,7 @@ Destaca automaticamente:
 - **F9** ou **Ctrl+Enter**: executa o SQL da aba atual
 - Se houver texto selecionado, executa apenas a seleção
 - Se não houver seleção, executa o conteúdo completo da aba
+- Se houver **múltiplos comandos separados por `;`**, cada um é executado individualmente e os resultados são exibidos em **abas separadas** ("Resultados 1", "Resultados 2", ...)
 
 ### 5.4 Comandos permitidos
 
@@ -301,7 +326,16 @@ Para tabelas identificadas automaticamente (SELECT de tabela única):
 - Abas (`\t`) separam colunas, novas linhas separam registros
 - Dados colados em novas linhas são tratados como INSERT
 
-### 6.6 Exportar
+### 6.6 Geração de scripts (INSERT / UPDATE)
+
+Clique com o botão direito na tabela de resultados para gerar scripts diretamente:
+
+- **Copiar como INSERT**: gera comandos `INSERT INTO tabela (colunas) VALUES (valores)` para cada linha selecionada
+- **Copiar como UPDATE**: gera comandos `UPDATE tabela SET coluna = valor WHERE ...` para cada linha
+
+Os scripts são inseridos em uma **nova aba no editor SQL**, onde podem ser revisados e executados.
+
+### 6.7 Exportar
 
 | Formato | Ação |
 |---|---|
@@ -310,9 +344,9 @@ Para tabelas identificadas automaticamente (SELECT de tabela única):
 
 UTF-8 com BOM para CSV. Cabeçalho com formatação para Excel.
 
-### 6.7 Mensagens de erro
+### 6.8 Mensagens de erro
 
-Erros de execução são exibidos na aba **Mensagens** com fundo escuro e texto vermelho.
+Erros de execução são exibidos na aba **Mensagens** com fundo escuro e texto vermelho. O texto é selecionável, permitindo copiar o erro completo (`Ctrl+C`) para análise.
 
 ---
 
@@ -346,23 +380,56 @@ Clique no botão **Importar CSV** na barra de ferramentas do editor.
 
 ## 8. Navegador de Schema
 
-Painel lateral esquerdo que exibe a estrutura do banco conectado:
+Painel lateral esquerdo que exibe a estrutura do banco conectado.
+
+### 8.1 Árvore de objetos
 
 ```
-📋 NomeDoBanco
-├── 📁 Tabelas
-│   ├── 📄 funcionarios
-│   │   ├── id (INTEGER, PK)
-│   │   ├── nome (VARCHAR)
-│   │   └── salario (DECIMAL)
-│   └── 📄 departamentos
-│       └── ...
-└── 📁 Views
-    └── 📄 vw_relatorio
+📁 TABLES
+├── 📄 funcionarios
+│   ├── id (INTEGER, PK)
+│   ├── nome (VARCHAR)
+│   ├── salario (DECIMAL)
+│   ├── 🔗 FK fk_func_depto: departamento_id → departamentos(id)
+│   ├── 🔗 FK fk_func_cargo: cargo_id → cargos(id)
+│   └── 📊 IDX idx_func_nome (nome)  [UNIQUE]
+└── 📄 departamentos
+    └── ...
+📁 VIEWS
+└── 📄 vw_relatorio
 ```
 
-- **Duplo clique** em uma tabela: insere o nome no editor SQL
-- O navegador é limpo ao desconectar
+**Legenda:**
+- **`PK`** — coluna de chave primária
+- **`🔗 FK`** — chave estrangeira (marrom), mostra coluna → tabela(coluna)
+- **`📊 IDX`** — índice (verde), mostra colunas e se é UNIQUE
+
+### 8.2 Ações disponíveis
+
+| Ação | Como fazer |
+|---|---|
+| Inserir nome da tabela no editor | **Duplo clique** na tabela |
+| Gerar CREATE TABLE | **Clique direito** na tabela → "Gerar CREATE TABLE" |
+| Gerar DROP TABLE | **Clique direito** na tabela → "Gerar DROP TABLE" |
+| Gerar SELECT * | **Clique direito** na tabela/VIEW → "Gerar SELECT *" |
+
+### 8.3 DDL gerado (CREATE TABLE)
+
+O `CREATE TABLE` gerado inclui:
+- **Colunas** com tipos e nullable
+- **PRIMARY KEY** como `CONSTRAINT PK_NomeTabela PRIMARY KEY (coluna1, ...)`
+- **FOREIGN KEY** como `CONSTRAINT FK_NomeTabela_Coluna FOREIGN KEY (col) REFERENCES TabelaRef(col)`
+- **Índices** como `CREATE [UNIQUE] INDEX nome_idx ON NomeTabela(col1, col2);`
+
+O `DROP TABLE` gerado inclui `ALTER TABLE ... DROP CONSTRAINT` para cada FK antes do `DROP TABLE IF EXISTS`.
+
+Os scripts são inseridos em uma **nova aba no editor SQL**, prontos para revisão e execução.
+
+### 8.4 Carregamento com overlay e proteção contra travamentos
+
+Ao conectar ou atualizar, um **overlay semi-transparente** cobre a árvore com a mensagem "Carregando schema..." centralizada em destaque. O carregamento pesado é adiado 50ms via `QTimer` para garantir que o overlay renderize antes da consulta, eliminando o congelamento visual.
+
+Se o schema falhar (ex: erro de permissão, consulta inválida), a **mensagem de erro real** é exibida em vermelho na árvore — não apenas um "Erro genérico".
 
 ---
 
@@ -498,11 +565,35 @@ Os logs são acumulativos (append). Use o painel de **Histórico** para consulta
 
 ---
 
-## 14. Arquivos de Configuração
+## 14. Segurança e Armazenamento de Configuração
 
-### `config.ini` (raiz do projeto)
+### `%APPDATA%/SQLExecutor/sqlexecutor.ini`
 
-Arquivo INI com a conexão padrão. **Não versionado** (no `.gitignore`).
+A configuração de conexão é salva no diretório de dados do usuário, **fora da pasta do projeto**, para:
+- Evitar conflitos com outros sistemas que usam `config.ini`
+- Proteger o arquivo contra commits acidentais
+- Isolar a configuração por usuário do Windows/Linux
+
+Localização por sistema operacional:
+
+| SO | Caminho |
+|---|---|
+| Windows | `%APPDATA%\SQLExecutor\sqlexecutor.ini` |
+| Linux | `~/.config/SQLExecutor/sqlexecutor.ini` |
+
+**A senha nunca é salva em texto puro.** Ela é armazenada no **gerenciador de credenciais do sistema operacional** através da biblioteca `keyring`:
+
+| SO | Cofre utilizado |
+|---|---|
+| Windows | Credential Manager (Painel de Controle > Gerenciador de Credenciais) |
+| Linux | libsecret (GNOME Keyring / KDE Wallet) |
+| macOS | Keychain |
+
+### Fallback (sem keyring)
+
+Se o pacote `keyring` não estiver disponível ou o cofre do SO falhar, a senha é armazenada no próprio INI em **base64** (obfuscação simples — não é criptografia). Neste caso recomenda-se restringir permissões do arquivo ao usuário dono.
+
+### Exemplo do INI (sem senha em texto puro)
 
 ```ini
 [Connection]
@@ -510,14 +601,21 @@ db_type = mssql
 server = 192.168.1.100,1433
 database = ERPMIRA
 username = sa
-password = Master@321
 use_windows_auth = False
 timeout = 30
 ```
 
+### Limpar credenciais salvas
+
+Execute:
+
+```powershell
+python -c "from infrastructure.config_manager import ConfigManager; ConfigManager().clear_password()"
+```
+
 ### `config/session.json`
 
-Sessão persistente para reconexão automática. **Não versionado**.
+Sessão persistente para reconexão automática. **Não versionado**. Contém apenas dados de conexão da última sessão (sem senha).
 
 ### `config/bookmarks.json`
 
@@ -549,6 +647,7 @@ python -m PyInstaller --onefile --windowed --name "SQLExecutor" `
     --hidden-import pyodbc --hidden-import oracledb --hidden-import fdb `
     --hidden-import pymysql --hidden-import psycopg2 `
     --hidden-import getpass --hidden-import sqlglot `
+    --hidden-import keyring --hidden-import keyring.backends.Windows `
     --clean --noconfirm main.py
 ```
 
@@ -569,7 +668,7 @@ SQLExecutor/
 ├── build.bat                        # Script de build PyInstaller
 ├── SQLExecutor.spec                 # Spec do PyInstaller
 ├── requirements.txt                 # Dependências Python
-├── config.ini                       # Configuração de conexão (gitignored)
+├── (config em %APPDATA%/SQLExecutor/sqlexecutor.ini)
 ├── .env                             # Variáveis de ambiente (gitignored)
 ├── icon.ico                         # Ícone do aplicativo
 │
@@ -587,7 +686,7 @@ SQLExecutor/
 │
 ├── infrastructure/                  # ——— Camada de Infraestrutura ———
 │   ├── version.py                   # __version__, __build__
-│   ├── config_manager.py            # Leitura/escrita do config.ini
+│   ├── config_manager.py            # Config em %APPDATA% + senha via keyring
 │   ├── i18n.py                      # Internacionalização (PT-BR)
 │   ├── logger.py                    # Auditoria em CSV
 │   ├── session.py                   # Sessão persistente (JSON)
@@ -607,13 +706,14 @@ SQLExecutor/
 │
 ├── ui/                              # ——— Camada de Interface ———
 │   ├── main_window.py               # Janela principal, menu, sinais, shortcuts
-│   ├── sql_editor.py                # Editor com abas, syntax highlight, find/replace
-│   ├── result_panel.py              # Tabela paginada, edição inline, exportação
+│   ├── sql_editor.py                # Editor com abas, syntax highlight, find/replace, split_sql_statements()
+│   ├── result_panel.py              # Tabela paginada, edição inline, exportação, scripts INSERT/UPDATE
 │   ├── connection_dialog.py         # Diálogo de conexão com seletor de banco
+│   ├── dialogs.py                   # show_critical() — erro copiável
 │   ├── import_dialog.py             # Importação CSV com mapeamento
 │   ├── parameter_dialog.py          # Diálogo de parâmetros nomeados
 │   ├── translate_dialog.py          # Diálogo do tradutor SQL
-│   ├── schema_browser.py            # Árvore de tabelas/colunas
+│   ├── schema_browser.py            # Árvore de tabelas/colunas com FK, índices, geração de DDL
 │   ├── history_panel.py             # Histórico de comandos
 │   └── bookmarks_panel.py           # Gerenciamento de favoritos
 │

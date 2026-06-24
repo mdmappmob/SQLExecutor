@@ -357,7 +357,7 @@ Tela de inicialização com fundo escuro, logotipo play verde, "SQL Executor", v
 ```
 SQLExecutor/
 ├── main.py                         # Ponto de entrada + splash screen + ícone
-├── config.ini                      # Configuração salva
+├── (config em %APPDATA%/SQLExecutor/sqlexecutor.ini)
 ├── requirements.txt                # Dependências
 ├── build.bat                       # Script de build
 ├── icon.ico                        # Ícone (verde play em fundo escuro)
@@ -420,7 +420,7 @@ SQLExecutor/
 ## Limitações
 
 - Uma conexão por vez
-- Senha salva em texto plano no `config.ini`
+- Senha armazenada no Credential Manager do SO via `keyring` (sem texto plano)
 - Oracle: apenas Easy Connect (sem TNS)
 - Firebird: requer fbclient.dll (bundled ou instalado no sistema)
 - Apenas português brasileiro (pt-BR)

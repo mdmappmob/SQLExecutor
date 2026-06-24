@@ -7,6 +7,7 @@ from PySide6.QtCore import Signal, Qt, QEvent, QPoint, QSize
 from PySide6.QtGui import QFont, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QTextDocument, QColor, QShortcut, QKeySequence, QIcon, QPixmap, QPolygon, QBrush, QPen, QPainter
 
 from infrastructure.i18n import I18N
+from ui.dialogs import show_critical
 
 
 class _SQLHighlighter(QSyntaxHighlighter):
@@ -130,6 +131,54 @@ class _SQLHighlighter(QSyntaxHighlighter):
                 return i
             i += 1
         return n - 1
+
+
+def split_sql_statements(sql: str) -> list[str]:
+    statements = []
+    current = []
+    i = 0
+    n = len(sql)
+    while i < n:
+        c = sql[i]
+        if c == "'":
+            current.append(c)
+            i += 1
+            while i < n:
+                current.append(sql[i])
+                if sql[i] == "'":
+                    if i + 1 < n and sql[i + 1] == "'":
+                        i += 1
+                        current.append(sql[i])
+                    else:
+                        break
+                i += 1
+            i += 1
+            continue
+        if c == '-' and i + 1 < n and sql[i + 1] == '-':
+            end = sql.find('\n', i + 2)
+            if end == -1:
+                break
+            i = end + 1
+            continue
+        if c == '/' and i + 1 < n and sql[i + 1] == '*':
+            end = sql.find('*/', i + 2)
+            if end == -1:
+                break
+            i = end + 2
+            continue
+        if c == ';':
+            stmt = ''.join(current).strip()
+            if stmt:
+                statements.append(stmt)
+            current = []
+            i += 1
+            continue
+        current.append(c)
+        i += 1
+    stmt = ''.join(current).strip()
+    if stmt:
+        statements.append(stmt)
+    return statements
 
 
 def strip_sql_comments(sql: str) -> str:
@@ -651,7 +700,7 @@ class SQLEditor(QWidget):
                 info.get("tab_name", "") or file_path.split("\\")[-1]
             )
         except Exception as e:
-            QMessageBox.critical(self, "Erro ao Salvar", str(e))
+            show_critical(self, "Erro ao Salvar", str(e))
 
     def _save_as_current_tab(self):
         info = self._current_tab()
@@ -670,7 +719,7 @@ class SQLEditor(QWidget):
                 file_path.split("\\")[-1]
             )
         except Exception as e:
-            QMessageBox.critical(self, "Erro ao Salvar", str(e))
+            show_critical(self, "Erro ao Salvar", str(e))
 
     def _make_editor(self) -> _HistoryEditor:
         e = _HistoryEditor()
@@ -693,6 +742,25 @@ class SQLEditor(QWidget):
     def _on_tab_changed(self, idx: int):
         if 0 <= idx < len(self._tabs):
             self._search_bar.set_editor(self._tabs[idx]["editor"])
+
+    def add_tab(self, tab_name: str, content: str):
+        self._tab_counter += 1
+        editor = self._make_editor()
+        editor.setPlainText(content)
+        info = {"editor": editor, "history": [], "history_index": -1,
+                "tab_name": tab_name, "file_path": ""}
+        self._tabs.append(info)
+        idx = self.tab_widget.addTab(editor, tab_name)
+        self.tab_widget.setCurrentIndex(idx)
+        tab_bar = self.tab_widget.tabBar()
+        if len(self._tabs) > 1:
+            tab_bar.setTabButton(idx - 1, QTabBar.RightSide, None)
+        tab_bar.setTabButton(idx, QTabBar.RightSide,
+                             self._make_close_btn(idx))
+        editor._history_up.connect(lambda t=info: self._history_up_for(t))
+        editor._history_down.connect(lambda t=info: self._history_down_for(t))
+        self._search_bar.set_editor(editor)
+        editor.setFocus()
 
     def _add_tab(self, content: str = ""):
         self._tab_counter += 1
@@ -795,7 +863,7 @@ class SQLEditor(QWidget):
         self.import_btn.setStyleSheet("""
             QPushButton {
                 background-color: #0078d4; color: white; padding: 8px 16px;
-                font-weight: bold; font-size: 10px; border-radius: 4px;
+                font-weight: bold; font-size: 11px; border-radius: 4px;
             }
             QPushButton:hover { background-color: #106ebe; }
             QPushButton:disabled { background-color: #ccc; }
@@ -805,11 +873,11 @@ class SQLEditor(QWidget):
 
         self.execute_btn = QPushButton(I18N.sql_editor["execute"])
         self.execute_btn.setIcon(self._make_play_icon())
-        self.execute_btn.setIconSize(QSize(24, 24))
+        self.execute_btn.setIconSize(QSize(16, 16))
         self.execute_btn.setStyleSheet("""
             QPushButton {
-                background-color: #107c10; color: white; padding: 8px 20px;
-                font-weight: bold; font-size: 12px; border-radius: 4px;
+                background-color: #107c10; color: white; padding: 8px 16px;
+                font-weight: bold; font-size: 11px; border-radius: 4px;
             }
             QPushButton:hover { background-color: #0b6b0b; }
             QPushButton:disabled { background-color: #ccc; }

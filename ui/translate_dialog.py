@@ -8,6 +8,7 @@ from PySide6.QtGui import QFont
 from domain.dialect.translator import translate
 from infrastructure.i18n import I18N
 from infrastructure.adapters.db_types import DBType
+from ui.dialogs import show_critical
 
 
 class TranslateDialog(QDialog):
@@ -135,7 +136,7 @@ class TranslateDialog(QDialog):
             self._result_sql = result
             self._use_btn.setEnabled(True)
         except Exception as e:
-            QMessageBox.critical(self, "Erro na tradução", str(e))
+            show_critical(self, "Erro na tradução", str(e))
 
     def get_result(self) -> str:
         return self._result_sql

@@ -5,3 +5,5 @@ fdb>=2.0.0
 openpyxl>=3.1.0
 pymysql>=1.1.0
 psycopg2-binary>=2.9.0
+keyring>=24.0.0
+sqlglot>=25.0.0
