@@ -20,6 +20,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         self._database = config.database.value
         self._connection = psycopg2.connect(
             host=config.server.value,
+            port=config.port,
             dbname=config.database.value,
             user=config.username,
             password=config.password,
@@ -271,6 +272,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         try:
             conn = psycopg2.connect(
                 host=config.server.value,
+                port=config.port,
                 dbname=config.database.value,
                 user=config.username,
                 password=config.password,

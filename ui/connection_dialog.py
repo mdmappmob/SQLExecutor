@@ -35,7 +35,6 @@ class ConnectionDialog(QDialog):
 
         self._server_label = QLabel(I18N.connection_panel["server_label"])
         self.server_edit = QLineEdit()
-        self.server_edit.setPlaceholderText(I18N.connection_panel["server_ph"])
         self._server_row = QWidget()
         row_layout = QHBoxLayout(self._server_row)
         row_layout.setContentsMargins(0, 0, 0, 0)
@@ -44,7 +43,6 @@ class ConnectionDialog(QDialog):
 
         self._database_label = QLabel(I18N.connection_panel["database_label"])
         self.database_edit = QLineEdit()
-        self.database_edit.setPlaceholderText(I18N.connection_panel["database_ph"])
         form.addRow(self._database_label, self.database_edit)
 
         self._auth_container = QWidget()
@@ -67,12 +65,10 @@ class ConnectionDialog(QDialog):
         auth_form.addRow(I18N.connection_panel["auth_label"], self._auth_choice_row)
 
         self.username_edit = QLineEdit()
-        self.username_edit.setPlaceholderText(I18N.connection_panel["username_ph"])
         self.username_edit.setEnabled(False)
         auth_form.addRow(I18N.connection_panel["username_label"], self.username_edit)
 
         self.password_edit = QLineEdit()
-        self.password_edit.setPlaceholderText(I18N.connection_panel["password_ph"])
         self.password_edit.setEchoMode(QLineEdit.Password)
         self.password_edit.setEnabled(False)
         auth_form.addRow(I18N.connection_panel["password_label"], self.password_edit)
@@ -85,6 +81,17 @@ class ConnectionDialog(QDialog):
         self._auth_label = QLabel(I18N.connection_panel["auth_label"])
         self._auth_label.setVisible(False)
         form.addRow(self._auth_label, self._auth_container)
+
+        self._port_label = QLabel("Porta:")
+        self.port_spin = QSpinBox()
+        self.port_spin.setRange(1, 65535)
+        self.port_spin.setValue(5432)
+        self.port_spin.setVisible(False)
+        self._port_label.setVisible(False)
+        port_layout = QHBoxLayout()
+        port_layout.addWidget(self.port_spin)
+        port_layout.addStretch()
+        form.addRow(self._port_label, port_layout)
 
         timeout_layout = QHBoxLayout()
         self.timeout_spin = QSpinBox()
@@ -160,16 +167,16 @@ class ConnectionDialog(QDialog):
             database = f"{server}/{database}"
         elif db_type == "firebird" and server and database and server != database:
             database = f"{server}:{database}"
-        elif db_type in ("mysql", "mariadb", "postgresql") and server and database and server != database:
-            server = database
 
-        self.server_edit.setText(server if db_type == "mssql" else "")
+        show_server = db_type in ("mssql", "mysql", "mariadb", "postgresql")
+        self.server_edit.setText(server if show_server else "")
         self.database_edit.setText(database)
         self.username_edit.setText(config.get("username", ""))
         self.password_edit.setText(config.get("password", ""))
         if not config.get("use_windows_auth", True):
             self.sql_auth_rb.setChecked(True)
         self.timeout_spin.setValue(config.get("timeout", 30))
+        self.port_spin.setValue(config.get("port", 5432))
         self._update_ui_for_db_type()
         self._loading = False
 
@@ -182,6 +189,7 @@ class ConnectionDialog(QDialog):
         self.password_edit.clear()
         self.windows_auth_rb.setChecked(True)
         self.timeout_spin.setValue(30)
+        self.port_spin.setValue(5432)
         self.error_text.setVisible(False)
         self._update_ui_for_db_type()
 
@@ -190,48 +198,64 @@ class ConnectionDialog(QDialog):
         if db_type == "mssql":
             self._server_label.setVisible(True)
             self._server_row.setVisible(True)
-            self._database_label.setText(I18N.connection_panel["database_label"])
-            self.database_edit.setPlaceholderText(I18N.connection_panel["database_ph"])
+            self.server_edit.setPlaceholderText("localhost\\SQLEXPRESS ou 192.168.1.100,1433")
+            self._database_label.setText("Banco:")
+            self.database_edit.setPlaceholderText("MeuBanco")
             self._auth_choice_row.setVisible(True)
             self.windows_auth_rb.setChecked(True)
             self.username_edit.setEnabled(False)
             self.password_edit.setEnabled(False)
+            self._port_label.setVisible(False)
+            self.port_spin.setVisible(False)
         elif db_type == "oracle":
             self._server_label.setVisible(False)
             self._server_row.setVisible(False)
             self._database_label.setText("Database / SID")
-            self.database_edit.setPlaceholderText("Ex: localhost:1521/XEPDB1 ou TNS_NAME")
+            self.database_edit.setPlaceholderText("localhost:1521/XEPDB1 ou TNS_NAME")
             self._auth_choice_row.setVisible(False)
             self.sql_auth_rb.setChecked(True)
             self.username_edit.setEnabled(True)
             self.password_edit.setEnabled(True)
+            self._port_label.setVisible(False)
+            self.port_spin.setVisible(False)
         elif db_type == "firebird":
             self._server_label.setVisible(False)
             self._server_row.setVisible(False)
             self._database_label.setText("Database / Caminho")
-            self.database_edit.setPlaceholderText("Ex: localhost/3050:C:\\db\\banco.fdb")
+            self.database_edit.setPlaceholderText("localhost/3050:C:\\db\\banco.fdb")
             self._auth_choice_row.setVisible(False)
             self.sql_auth_rb.setChecked(True)
             self.username_edit.setEnabled(True)
             self.password_edit.setEnabled(True)
+            self._port_label.setVisible(False)
+            self.port_spin.setVisible(False)
         elif db_type in ("mysql", "mariadb"):
             self._server_label.setVisible(True)
             self._server_row.setVisible(True)
+            self.server_edit.setPlaceholderText("localhost ou 192.168.1.100")
             self._database_label.setText("Database / Schema")
-            self.database_edit.setPlaceholderText("Ex: meubanco")
+            self.database_edit.setPlaceholderText("meubanco")
             self._auth_choice_row.setVisible(False)
             self.sql_auth_rb.setChecked(True)
             self.username_edit.setEnabled(True)
             self.password_edit.setEnabled(True)
+            self._port_label.setVisible(False)
+            self.port_spin.setVisible(False)
         else:  # postgresql
             self._server_label.setVisible(True)
             self._server_row.setVisible(True)
+            self.server_edit.setPlaceholderText("vcmm, localhost ou 192.168.1.100")
             self._database_label.setText("Database / Schema")
-            self.database_edit.setPlaceholderText("Ex: meubanco")
+            self.database_edit.setPlaceholderText("meubanco")
             self._auth_choice_row.setVisible(False)
             self.sql_auth_rb.setChecked(True)
             self.username_edit.setEnabled(True)
             self.password_edit.setEnabled(True)
+            self._port_label.setVisible(True)
+            self.port_spin.setVisible(True)
+
+        self.username_edit.setPlaceholderText("usuário")
+        self.password_edit.setPlaceholderText("senha")
 
     def get_config(self) -> dict:
         db_type = self.db_type_combo.currentData()
@@ -243,6 +267,7 @@ class ConnectionDialog(QDialog):
             "username": self.username_edit.text().strip(),
             "password": self.password_edit.text(),
             "use_windows_auth": use_windows_auth,
+            "port": self.port_spin.value(),
             "timeout": self.timeout_spin.value(),
         }
 
@@ -281,6 +306,7 @@ class ConnectionDialog(QDialog):
             username=config["username"],
             password=config["password"],
             use_windows_auth=config["use_windows_auth"],
+            port=config["port"],
         )
 
         self.test_btn.setEnabled(True)
@@ -312,6 +338,7 @@ class ConnectionDialog(QDialog):
             username=config["username"],
             password=config["password"],
             use_windows_auth=config["use_windows_auth"],
+            port=config["port"],
             timeout=config["timeout"],
         )
 

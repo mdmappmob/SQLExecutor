@@ -90,6 +90,7 @@ class ConfigManager:
             "password": password,
             "use_windows_auth": section.getboolean("use_windows_auth", fallback=True),
             "timeout": section.getint("timeout", fallback=30),
+            "port": section.getint("port", fallback=5432),
         }
 
     def save(self, data: dict) -> None:
@@ -103,6 +104,7 @@ class ConfigManager:
             "username": data.get("username", ""),
             "use_windows_auth": str(data.get("use_windows_auth", True)),
             "timeout": str(data.get("timeout", 30)),
+            "port": str(data.get("port", 5432)),
         }
 
         username = data.get("username", "")
@@ -141,6 +143,7 @@ class ConfigManager:
             "password": "",
             "use_windows_auth": True,
             "timeout": 30,
+            "port": 5432,
         }
 
     @property

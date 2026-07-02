@@ -40,6 +40,7 @@ class ConnectionUseCase:
         password: str = "",
         use_windows_auth: bool = True,
         timeout: int = 30,
+        port: int | None = None,
     ) -> ConnectionSession:
         self.session.status = ConnectionStatus.CONNECTING
 
@@ -53,6 +54,7 @@ class ConnectionUseCase:
                 password=password,
                 use_windows_auth=use_windows_auth,
                 timeout_seconds=timeout,
+                port=port,
             )
             self._adapter.connect(config)
             self.session.server = server
@@ -80,6 +82,7 @@ class ConnectionUseCase:
         username: str = "",
         password: str = "",
         use_windows_auth: bool = True,
+        port: int | None = None,
     ) -> bool:
         server_val = server if server else database
         config = ConnectionConfig(
@@ -90,6 +93,7 @@ class ConnectionUseCase:
             password=password,
             use_windows_auth=use_windows_auth,
             timeout_seconds=10,
+            port=port,
         )
         return self._adapter.test_connection(config)
 

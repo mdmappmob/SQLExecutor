@@ -51,3 +51,4 @@ class ConnectionConfig:
     timeout_seconds: int = 30
     encrypt: bool = False
     trust_server_certificate: bool = True
+    port: int | None = None
