@@ -137,7 +137,19 @@ def test_use_cases():
             return ExecutionResult(True, 42, 50, "42 rows")
 
         def test_connection(self, config):
-            return True
+            return True, ""
+
+        def get_schema(self):
+            return []
+
+        def get_table_columns(self, table_name, schema=None):
+            return []
+
+        def executemany(self, sql_template, params):
+            return ExecutionResult(True, len(params), 0, f"{len(params)} rows")
+
+        def execute_autocommit(self, sql):
+            return self.execute(sql)
 
     class MockLogger:
         def __init__(self):
@@ -192,6 +204,7 @@ def test_ui_imports():
     from ui.connection_dialog import ConnectionDialog
     from ui.sql_editor import SQLEditor
     from ui.result_panel import ResultPanel
+    from ui.migration_dialog import MigrationDialog
 
     print("  UI module imports: OK")
 

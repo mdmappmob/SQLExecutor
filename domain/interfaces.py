@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from domain.value_objects import ConnectionConfig, SQLText
-from domain.entities import ExecutionResult
+from domain.entities import ExecutionResult, ProcedureInfo, SequenceInfo, TriggerInfo
 
 
 @dataclass
@@ -10,6 +10,17 @@ class ColumnInfo:
     data_type: str
     nullable: bool = True
     is_pk: bool = False
+    default_value: str | None = None
+    is_identity: bool = False
+    identity_start: int | None = None
+    identity_increment: int | None = None
+    char_length: int | None = None
+    precision: int | None = None
+    scale: int | None = None
+    character_set: str | None = None
+    collation: str | None = None
+    check_constraint: str | None = None
+    comment: str | None = None
 
 
 @dataclass
@@ -50,7 +61,7 @@ class DatabaseAdapter(ABC):
     def execute(self, sql: SQLText) -> ExecutionResult: ...
 
     @abstractmethod
-    def test_connection(self, config: ConnectionConfig) -> bool: ...
+    def test_connection(self, config: ConnectionConfig) -> tuple[bool, str]: ...
 
     def get_schema(self) -> list[TableInfo]:
         return []
@@ -58,8 +69,25 @@ class DatabaseAdapter(ABC):
     def get_table_columns(self, table_name: str, schema: str | None = None) -> list[ColumnInfo]:
         return []
 
+    def get_sequences(self) -> list[SequenceInfo]:
+        return []
+
+    def get_triggers(self) -> list[TriggerInfo]:
+        return []
+
+    def get_procedures(self) -> list[ProcedureInfo]:
+        return []
+
     def get_connection(self):
         return self._connection if hasattr(self, "_connection") else None
+
+    def executemany(self, sql_template: str, params: list[list]) -> ExecutionResult:
+        """Execute the same SQL template with multiple parameter sets."""
+        raise NotImplementedError
+
+    def execute_autocommit(self, sql: SQLText) -> ExecutionResult:
+        """Execute a statement outside transaction (default: same as execute)."""
+        return self.execute(sql)
 
 
 class CommandValidator(ABC):

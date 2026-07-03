@@ -18,14 +18,17 @@ class MySQLAdapter(DatabaseAdapter):
             self.disconnect()
         self._server = config.server.value
         self._database = config.database.value
-        self._connection = pymysql.connect(
-            host=config.server.value,
-            database=config.database.value,
-            user=config.username,
-            password=config.password,
-            connect_timeout=config.timeout_seconds,
-            autocommit=False,
-        )
+        kwargs = {
+            "host": config.server.value,
+            "database": config.database.value,
+            "user": config.username,
+            "password": config.password,
+            "connect_timeout": config.timeout_seconds,
+            "autocommit": False,
+        }
+        if config.port:
+            kwargs["port"] = config.port
+        self._connection = pymysql.connect(**kwargs)
 
     def disconnect(self) -> None:
         if self._connection:
@@ -225,22 +228,25 @@ class MySQLAdapter(DatabaseAdapter):
             cursor.close()
         return result
 
-    def test_connection(self, config: ConnectionConfig) -> bool:
+    def test_connection(self, config: ConnectionConfig) -> tuple[bool, str]:
         conn = None
         try:
-            conn = pymysql.connect(
-                host=config.server.value,
-                database=config.database.value,
-                user=config.username,
-                password=config.password,
-                connect_timeout=10,
-            )
+            kwargs = {
+                "host": config.server.value,
+                "database": config.database.value,
+                "user": config.username,
+                "password": config.password,
+                "connect_timeout": 10,
+            }
+            if config.port:
+                kwargs["port"] = config.port
+            conn = pymysql.connect(**kwargs)
             cursor = conn.cursor()
             cursor.execute("SELECT 1")
             cursor.close()
-            return True
-        except pymysql.Error:
-            return False
+            return True, ""
+        except pymysql.Error as e:
+            return False, str(e).strip()
         finally:
             if conn:
                 try:

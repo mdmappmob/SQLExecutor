@@ -27,6 +27,9 @@ class SchemaBrowser(QWidget):
     def set_db_type(self, db_type: str):
         self._db_type = db_type
 
+    def get_schema_data(self) -> list:
+        return self._schema_data
+
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -190,6 +193,12 @@ class SchemaBrowser(QWidget):
                     table_item.addChild(idx_item)
 
     def _quote_identifier(self, name: str) -> str:
+        if '.' in name:
+            parts = name.split('.', 1)
+            return f'{self._quote_part(parts[0])}.{self._quote_part(parts[1])}'
+        return self._quote_part(name)
+
+    def _quote_part(self, name: str) -> str:
         if self._db_type == "mssql":
             return f"[{name}]"
         if self._db_type in ("mysql", "mariadb"):
@@ -300,7 +309,7 @@ class SchemaBrowser(QWidget):
     def _on_item_double_clicked(self, item: QTreeWidgetItem, _column: int):
         data = item.data(0, Qt.UserRole)
         if data and data != "__group__":
-            self.item_insert_requested.emit(data)
+            self.item_insert_requested.emit(self._quote_identifier(data))
 
     def focus_filter(self):
         self._tree.setFocus()

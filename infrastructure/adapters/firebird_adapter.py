@@ -23,6 +23,97 @@ class FirebirdAdapter(DatabaseAdapter):
     _server: str = ""
     _database: str = ""
 
+    _COLUMN_SELECT_WITH_IDENTITY = """
+        TRIM(RF.RDB$FIELD_NAME),
+        CASE F.RDB$FIELD_TYPE
+            WHEN 7 THEN 'SMALLINT' WHEN 8 THEN 'INTEGER'
+            WHEN 10 THEN 'FLOAT' WHEN 12 THEN 'DATE'
+            WHEN 13 THEN 'TIME' WHEN 14 THEN 'CHAR'
+            WHEN 16 THEN 'BIGINT' WHEN 27 THEN 'DOUBLE'
+            WHEN 35 THEN 'TIMESTAMP' WHEN 37 THEN 'VARCHAR'
+            WHEN 40 THEN 'CLOB' WHEN 45 THEN 'BLOB_ID'
+            WHEN 261 THEN 'BLOB' ELSE 'UNKNOWN'
+        END,
+        COALESCE(RF.RDB$NULL_FLAG, 0),
+        CASE WHEN pk.RDB$FIELD_NAME IS NOT NULL THEN 1 ELSE 0 END,
+        RF.RDB$DEFAULT_SOURCE,
+        COALESCE(F.RDB$IDENTITY_TYPE, 0),
+        CASE WHEN F.RDB$FIELD_TYPE IN (37, 14) THEN F.RDB$CHARACTER_LENGTH ELSE NULL END,
+        F.RDB$FIELD_PRECISION,
+        F.RDB$FIELD_SCALE,
+        CS.RDB$CHARACTER_SET_NAME,
+        NULL,
+        F.RDB$VALIDATION_SOURCE,
+        RF.RDB$DESCRIPTION
+    """
+
+    _COLUMN_SELECT_WITHOUT_IDENTITY = """
+        TRIM(RF.RDB$FIELD_NAME),
+        CASE F.RDB$FIELD_TYPE
+            WHEN 7 THEN 'SMALLINT' WHEN 8 THEN 'INTEGER'
+            WHEN 10 THEN 'FLOAT' WHEN 12 THEN 'DATE'
+            WHEN 13 THEN 'TIME' WHEN 14 THEN 'CHAR'
+            WHEN 16 THEN 'BIGINT' WHEN 27 THEN 'DOUBLE'
+            WHEN 35 THEN 'TIMESTAMP' WHEN 37 THEN 'VARCHAR'
+            WHEN 40 THEN 'CLOB' WHEN 45 THEN 'BLOB_ID'
+            WHEN 261 THEN 'BLOB' ELSE 'UNKNOWN'
+        END,
+        COALESCE(RF.RDB$NULL_FLAG, 0),
+        CASE WHEN pk.RDB$FIELD_NAME IS NOT NULL THEN 1 ELSE 0 END,
+        RF.RDB$DEFAULT_SOURCE,
+        0,
+        CASE WHEN F.RDB$FIELD_TYPE IN (37, 14) THEN F.RDB$CHARACTER_LENGTH ELSE NULL END,
+        F.RDB$FIELD_PRECISION,
+        F.RDB$FIELD_SCALE,
+        CS.RDB$CHARACTER_SET_NAME,
+        NULL,
+        F.RDB$VALIDATION_SOURCE,
+        RF.RDB$DESCRIPTION
+    """
+
+    def _execute_columns_query(self, table_name: str) -> list:
+        cursor = self._connection.cursor()
+        try:
+            cursor.execute(f"""
+                SELECT {self._COLUMN_SELECT_WITH_IDENTITY}
+                FROM RDB$RELATION_FIELDS RF
+                JOIN RDB$FIELDS F ON RF.RDB$FIELD_SOURCE = F.RDB$FIELD_NAME
+                LEFT JOIN (
+                    SELECT S.RDB$FIELD_NAME
+                    FROM RDB$INDICES I
+                    JOIN RDB$INDEX_SEGMENTS S ON I.RDB$INDEX_NAME = S.RDB$INDEX_NAME
+                    WHERE I.RDB$RELATION_NAME = ?
+                      AND I.RDB$UNIQUE_FLAG = 1
+                      AND I.RDB$INDEX_INACTIVE IS NULL
+                ) pk ON pk.RDB$FIELD_NAME = RF.RDB$FIELD_NAME
+                LEFT JOIN RDB$CHARACTER_SETS CS ON F.RDB$CHARACTER_SET_ID = CS.RDB$CHARACTER_SET_ID
+                WHERE RF.RDB$RELATION_NAME = ?
+                ORDER BY RF.RDB$FIELD_POSITION
+            """, (table_name, table_name))
+            return cursor.fetchall()
+        except fdb.Error as e:
+            if "-206" in str(e):
+                cursor.execute(f"""
+                    SELECT {self._COLUMN_SELECT_WITHOUT_IDENTITY}
+                    FROM RDB$RELATION_FIELDS RF
+                    JOIN RDB$FIELDS F ON RF.RDB$FIELD_SOURCE = F.RDB$FIELD_NAME
+                    LEFT JOIN (
+                        SELECT S.RDB$FIELD_NAME
+                        FROM RDB$INDICES I
+                        JOIN RDB$INDEX_SEGMENTS S ON I.RDB$INDEX_NAME = S.RDB$INDEX_NAME
+                        WHERE I.RDB$RELATION_NAME = ?
+                          AND I.RDB$UNIQUE_FLAG = 1
+                          AND I.RDB$INDEX_INACTIVE IS NULL
+                    ) pk ON pk.RDB$FIELD_NAME = RF.RDB$FIELD_NAME
+                    LEFT JOIN RDB$CHARACTER_SETS CS ON F.RDB$CHARACTER_SET_ID = CS.RDB$CHARACTER_SET_ID
+                    WHERE RF.RDB$RELATION_NAME = ?
+                    ORDER BY RF.RDB$FIELD_POSITION
+                """, (table_name, table_name))
+                return cursor.fetchall()
+            raise
+        finally:
+            cursor.close()
+
     def connect(self, config: ConnectionConfig) -> None:
         if self._connection:
             self.disconnect()
@@ -105,6 +196,9 @@ class FirebirdAdapter(DatabaseAdapter):
             except Exception:
                 pass
 
+    def execute_autocommit(self, sql: SQLText) -> ExecutionResult:
+        return self.execute(sql)
+
     def executemany(self, sql_template: str, params: list[list]) -> ExecutionResult:
         if not self._connection:
             return ExecutionResult(
@@ -163,35 +257,30 @@ class FirebirdAdapter(DatabaseAdapter):
                 for row in cursor.fetchall():
                     tname = row[0]
                     columns: list[ColumnInfo] = []
-                    cursor.execute("""
-                        SELECT
-                            TRIM(RF.RDB$FIELD_NAME),
-                            CASE F.RDB$FIELD_TYPE
-                                WHEN 7 THEN 'SMALLINT' WHEN 8 THEN 'INTEGER'
-                                WHEN 10 THEN 'FLOAT' WHEN 12 THEN 'DATE'
-                                WHEN 13 THEN 'TIME' WHEN 14 THEN 'CHAR'
-                                WHEN 16 THEN 'BIGINT' WHEN 27 THEN 'DOUBLE'
-                                WHEN 35 THEN 'TIMESTAMP' WHEN 37 THEN 'VARCHAR'
-                                WHEN 40 THEN 'CLOB' WHEN 45 THEN 'BLOB_ID'
-                                WHEN 261 THEN 'BLOB' ELSE 'UNKNOWN'
-                            END,
-                            COALESCE(RF.RDB$NULL_FLAG, 0),
-                            CASE WHEN pk.RDB$FIELD_NAME IS NOT NULL THEN 1 ELSE 0 END
-                        FROM RDB$RELATION_FIELDS RF
-                        JOIN RDB$FIELDS F ON RF.RDB$FIELD_SOURCE = F.RDB$FIELD_NAME
-                        LEFT JOIN (
-                            SELECT S.RDB$FIELD_NAME
-                            FROM RDB$INDICES I
-                            JOIN RDB$INDEX_SEGMENTS S ON I.RDB$INDEX_NAME = S.RDB$INDEX_NAME
-                            WHERE I.RDB$RELATION_NAME = ?
-                              AND I.RDB$UNIQUE_FLAG = 1
-                              AND I.RDB$INDEX_INACTIVE IS NULL
-                        ) pk ON pk.RDB$FIELD_NAME = RF.RDB$FIELD_NAME
-                        WHERE RF.RDB$RELATION_NAME = ?
-                        ORDER BY RF.RDB$FIELD_POSITION
-                    """, (tname, tname))
-                    for c in cursor.fetchall():
-                        columns.append(ColumnInfo(name=c[0], data_type=c[1], nullable=not bool(c[2]), is_pk=bool(c[3])))
+                    seen_names: set[str] = set()
+                    col_rows = self._execute_columns_query(tname)
+                    for c in col_rows:
+                        cname = c[0]
+                        if cname in seen_names:
+                            continue
+                        seen_names.add(cname)
+                        raw_scale = c[8]
+                        scale = -raw_scale if raw_scale is not None and raw_scale < 0 else raw_scale
+                        dv = c[4]
+                        if dv and dv.strip().upper().startswith('DEFAULT '):
+                            dv = dv.strip()[8:].strip()
+                        columns.append(ColumnInfo(
+                            name=cname, data_type=c[1],
+                            nullable=not bool(c[2]), is_pk=bool(c[3]),
+                            default_value=dv,
+                            is_identity=bool(c[5]),
+                            char_length=c[6],
+                            precision=c[7],
+                            scale=scale,
+                            character_set=c[9] if c[9] else None,
+                            check_constraint=c[11],
+                            comment=c[12] if c[12] else None,
+                        ))
                     foreign_keys: list[ForeignKeyInfo] = []
                     indexes: list[IndexInfo] = []
                     if type_label == "TABLE":
@@ -251,42 +340,120 @@ class FirebirdAdapter(DatabaseAdapter):
         result: list[ColumnInfo] = []
         if not self._connection:
             return result
+        seen_names: set[str] = set()
+        for row in self._execute_columns_query(table_name):
+            cname = row[0]
+            if cname in seen_names:
+                continue
+            seen_names.add(cname)
+            raw_scale = row[8]
+            scale = -raw_scale if raw_scale is not None and raw_scale < 0 else raw_scale
+            dv = row[4]
+            if dv and dv.strip().upper().startswith('DEFAULT '):
+                dv = dv.strip()[8:].strip()
+            result.append(ColumnInfo(
+                name=cname, data_type=row[1],
+                nullable=not bool(row[2]), is_pk=bool(row[3]),
+                default_value=dv,
+                is_identity=bool(row[5]),
+                char_length=row[6],
+                precision=row[7],
+                scale=scale,
+                character_set=row[9] if row[9] else None,
+                check_constraint=row[11],
+                comment=row[12] if row[12] else None,
+            ))
+        return result
+
+    def get_sequences(self) -> list[SequenceInfo]:
+        from domain.entities import SequenceInfo
+        result: list[SequenceInfo] = []
+        if not self._connection:
+            return result
         cursor = self._connection.cursor()
         try:
             cursor.execute("""
                 SELECT
-                    TRIM(RF.RDB$FIELD_NAME),
-                    CASE F.RDB$FIELD_TYPE
-                        WHEN 7 THEN 'SMALLINT' WHEN 8 THEN 'INTEGER'
-                        WHEN 10 THEN 'FLOAT' WHEN 12 THEN 'DATE'
-                        WHEN 13 THEN 'TIME' WHEN 14 THEN 'CHAR'
-                        WHEN 16 THEN 'BIGINT' WHEN 27 THEN 'DOUBLE'
-                        WHEN 35 THEN 'TIMESTAMP' WHEN 37 THEN 'VARCHAR'
-                        WHEN 40 THEN 'CLOB' WHEN 45 THEN 'BLOB_ID'
-                        WHEN 261 THEN 'BLOB' ELSE 'UNKNOWN'
-                    END,
-                    COALESCE(RF.RDB$NULL_FLAG, 0),
-                    CASE WHEN pk.RDB$FIELD_NAME IS NOT NULL THEN 1 ELSE 0 END
-                FROM RDB$RELATION_FIELDS RF
-                JOIN RDB$FIELDS F ON RF.RDB$FIELD_SOURCE = F.RDB$FIELD_NAME
-                LEFT JOIN (
-                    SELECT S.RDB$FIELD_NAME
-                    FROM RDB$INDICES I
-                    JOIN RDB$INDEX_SEGMENTS S ON I.RDB$INDEX_NAME = S.RDB$INDEX_NAME
-                    WHERE I.RDB$RELATION_NAME = ?
-                      AND I.RDB$UNIQUE_FLAG = 1
-                      AND I.RDB$INDEX_INACTIVE IS NULL
-                ) pk ON pk.RDB$FIELD_NAME = RF.RDB$FIELD_NAME
-                WHERE RF.RDB$RELATION_NAME = ?
-                ORDER BY RF.RDB$FIELD_POSITION
-            """, (table_name, table_name))
+                    TRIM(G.RDB$GENERATOR_NAME),
+                    G.RDB$INITIAL_VALUE,
+                    G.RDB$GENERATOR_INCREMENT
+                FROM RDB$GENERATORS G
+                WHERE G.RDB$SYSTEM_FLAG = 0
+                ORDER BY G.RDB$GENERATOR_NAME
+            """)
             for row in cursor.fetchall():
-                result.append(ColumnInfo(name=row[0], data_type=row[1], nullable=not bool(row[2]), is_pk=bool(row[3])))
+                result.append(SequenceInfo(
+                    name=row[0],
+                    start_value=row[1] or 1,
+                    increment=row[2] or 1,
+                ))
         finally:
             cursor.close()
         return result
 
-    def test_connection(self, config: ConnectionConfig) -> bool:
+    def get_triggers(self) -> list[TriggerInfo]:
+        from domain.entities import TriggerInfo
+        result: list[TriggerInfo] = []
+        if not self._connection:
+            return result
+        cursor = self._connection.cursor()
+        try:
+            cursor.execute("""
+                SELECT
+                    TRIM(RDB$TRIGGER_NAME),
+                    TRIM(RDB$RELATION_NAME),
+                    RDB$TRIGGER_TYPE,
+                    RDB$TRIGGER_SOURCE
+                FROM RDB$TRIGGERS
+                WHERE RDB$SYSTEM_FLAG = 0
+                ORDER BY RDB$TRIGGER_NAME
+            """)
+            trigger_events = {
+                1: "BEFORE INSERT", 2: "AFTER INSERT",
+                3: "BEFORE UPDATE", 4: "AFTER UPDATE",
+                5: "BEFORE DELETE", 6: "AFTER DELETE",
+            }
+            for row in cursor.fetchall():
+                ttype = row[2]
+                event = trigger_events.get(ttype, f"UNKNOWN({ttype})")
+                body = row[3] or ""
+                result.append(TriggerInfo(
+                    name=row[0],
+                    event=event,
+                    body=body,
+                    table_name=row[1] or "",
+                ))
+        finally:
+            cursor.close()
+        return result
+
+    def get_procedures(self) -> list[ProcedureInfo]:
+        from domain.entities import ProcedureInfo
+        result: list[ProcedureInfo] = []
+        if not self._connection:
+            return result
+        cursor = self._connection.cursor()
+        try:
+            cursor.execute("""
+                SELECT
+                    TRIM(RDB$PROCEDURE_NAME),
+                    TRIM(RDB$PROCEDURE_SOURCE)
+                FROM RDB$PROCEDURES
+                WHERE RDB$SYSTEM_FLAG = 0
+                ORDER BY RDB$PROCEDURE_NAME
+            """)
+            for row in cursor.fetchall():
+                source = row[1] or ""
+                result.append(ProcedureInfo(
+                    name=row[0],
+                    body=source,
+                    source=source,
+                ))
+        finally:
+            cursor.close()
+        return result
+
+    def test_connection(self, config: ConnectionConfig) -> tuple[bool, str]:
         conn = None
         try:
             dsn = config.database.value
@@ -301,9 +468,9 @@ class FirebirdAdapter(DatabaseAdapter):
             cursor = conn.cursor()
             cursor.execute("SELECT 1 FROM RDB$DATABASE")
             cursor.close()
-            return True
-        except fdb.Error:
-            return False
+            return True, ""
+        except fdb.Error as e:
+            return False, str(e).strip()
         finally:
             if conn:
                 try:

@@ -90,22 +90,25 @@ class ConfigManager:
             "password": password,
             "use_windows_auth": section.getboolean("use_windows_auth", fallback=True),
             "timeout": section.getint("timeout", fallback=30),
-            "port": section.getint("port", fallback=5432),
+            "port": section.getint("port", fallback=None),
         }
 
     def save(self, data: dict) -> None:
         self._file_path.parent.mkdir(parents=True, exist_ok=True)
 
         config = configparser.ConfigParser()
-        config["Connection"] = {
+        connection_data = {
             "db_type": data.get("db_type", "mssql"),
             "server": data.get("server", ""),
             "database": data.get("database", ""),
             "username": data.get("username", ""),
             "use_windows_auth": str(data.get("use_windows_auth", True)),
             "timeout": str(data.get("timeout", 30)),
-            "port": str(data.get("port", 5432)),
         }
+        port = data.get("port")
+        if port:
+            connection_data["port"] = str(port)
+        config["Connection"] = connection_data
 
         username = data.get("username", "")
         password = data.get("password", "")
@@ -143,7 +146,7 @@ class ConfigManager:
             "password": "",
             "use_windows_auth": True,
             "timeout": 30,
-            "port": 5432,
+            "port": None,
         }
 
     @property

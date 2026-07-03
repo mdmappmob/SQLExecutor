@@ -64,3 +64,53 @@ class ConnectionSession:
     status: ConnectionStatus = ConnectionStatus.DISCONNECTED
     connected_at: datetime | None = None
     error_message: str = ""
+
+
+@dataclass
+class SequenceInfo:
+    name: str
+    start_value: int = 1
+    increment: int = 1
+    min_value: int | None = None
+    max_value: int | None = None
+
+
+@dataclass
+class TriggerInfo:
+    name: str
+    event: str
+    body: str
+    table_name: str = ""
+
+
+@dataclass
+class ViewInfo:
+    name: str
+    definition: str
+
+
+@dataclass
+class ProcedureInfo:
+    name: str
+    owner: str = ""
+    body: str = ""
+    input_params: str = ""
+    output_params: str = ""
+    source: str = ""
+
+
+@dataclass
+class FullSchema:
+    tables: list = field(default_factory=list)
+    views: list[ViewInfo] = field(default_factory=list)
+    sequences: list[SequenceInfo] = field(default_factory=list)
+    triggers: list[TriggerInfo] = field(default_factory=list)
+    procedures: list[ProcedureInfo] = field(default_factory=list)
+
+
+@dataclass
+class TypeMapping:
+    source_type: str
+    target_type: str
+    conversion_expr: str | None = None
+    warning: str | None = None

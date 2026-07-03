@@ -17,6 +17,7 @@ from ui.sql_editor import SQLEditor, strip_sql_comments, split_sql_statements
 from ui.result_panel import ResultPanel
 from ui.connection_dialog import ConnectionDialog
 from ui.import_dialog import ImportDialog
+from ui.migration_dialog import MigrationDialog
 from ui.parameter_dialog import ParameterDialog
 from ui.translate_dialog import TranslateDialog
 from ui.dialogs import show_critical
@@ -26,6 +27,7 @@ from ui.bookmarks_panel import BookmarksPanel
 from infrastructure.i18n import I18N
 from infrastructure.session import save_session, load_session
 from infrastructure.version import __version__
+from ui.about_dialog import AboutDialog
 
 
 def _is_single_table_select(sql: str) -> tuple[bool, str]:
@@ -115,6 +117,15 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         conn_menu.addAction(exit_action)
 
+        help_menu = menubar.addMenu("A&juda")
+        about_action = QAction("&Sobre", self)
+        about_action.triggered.connect(self._on_about)
+        help_menu.addAction(about_action)
+
+    def _on_about(self):
+        dialog = AboutDialog(self)
+        dialog.exec()
+
     def _build_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
@@ -154,6 +165,16 @@ class MainWindow(QMainWindow):
         """)
         self._translate_btn.clicked.connect(self._on_translate)
         self.sql_editor.add_left_button(self._translate_btn)
+
+        self._migrate_btn = QPushButton("Migrar")
+        self._migrate_btn.setToolTip("Migrar banco de dados entre dialetos")
+        self._migrate_btn.setStyleSheet("""
+            QPushButton { background-color: #d9534f; color: white; padding: 8px 16px;
+                          font-weight: bold; font-size: 11px; border-radius: 4px; }
+            QPushButton:hover { background-color: #c9302c; }
+        """)
+        self._migrate_btn.clicked.connect(self._on_migrate)
+        self.sql_editor.add_left_button(self._migrate_btn)
 
         self._schema_browser = SchemaBrowser()
         self._schema_browser.set_db_type(self._db_type)
@@ -563,6 +584,27 @@ class MainWindow(QMainWindow):
             if result:
                 self.sql_editor._add_tab(result)
                 self.status_bar.showMessage("SQL traduzido inserido em nova aba", 5000)
+
+    def _on_migrate(self):
+        src_info = None
+        schema_data = None
+        _TYPES_WITH_PORT = {"postgresql"}
+        if self._adapter.is_connected():
+            session = self._connection_uc.session
+            cfg = self._config_mgr.load()
+            same_type = cfg.get("db_type") == self._db_type
+            src_info = {
+                "type": self._db_type,
+                "server": session.server,
+                "database": session.database,
+                "port": cfg.get("port") if (same_type and self._db_type in _TYPES_WITH_PORT) else None,
+                "username": cfg.get("username", "") if same_type else "",
+                "password": cfg.get("password", "") if same_type else "",
+                "use_windows_auth": cfg.get("use_windows_auth", False) if same_type else False,
+            }
+            schema_data = self._schema_browser.get_schema_data()
+        dialog = MigrationDialog(self, source_info=src_info, schema_data=schema_data)
+        dialog.exec()
 
     def _on_cancel(self):
         if self.sql_editor.is_search_visible():

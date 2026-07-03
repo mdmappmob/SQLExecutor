@@ -130,6 +130,19 @@ class MSSQLAdapter(DatabaseAdapter):
                 message=I18N.infrastructure["error"].format(msg=error_msg)
             )
 
+    def execute_autocommit(self, sql: SQLText) -> ExecutionResult:
+        if not self._connection:
+            return ExecutionResult(
+                success=False, rows_affected=0, duration_ms=0,
+                message=I18N.infrastructure["not_connected"]
+            )
+        old = self._connection.autocommit
+        self._connection.autocommit = True
+        try:
+            return self.execute(sql)
+        finally:
+            self._connection.autocommit = old
+
     def executemany(self, sql_template: str, params: list[list]) -> ExecutionResult:
         if not self._connection:
             return ExecutionResult(
@@ -188,7 +201,16 @@ class MSSQLAdapter(DatabaseAdapter):
                         SELECT
                             c.COLUMN_NAME, c.DATA_TYPE,
                             CASE WHEN c.IS_NULLABLE = 'YES' THEN 1 ELSE 0 END,
-                            CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END
+                            CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END,
+                            c.COLUMN_DEFAULT,
+                            COLUMNPROPERTY(OBJECT_ID(c.TABLE_NAME), c.COLUMN_NAME, 'IsIdentity'),
+                            c.CHARACTER_MAXIMUM_LENGTH,
+                            c.NUMERIC_PRECISION,
+                            c.NUMERIC_SCALE,
+                            c.CHARACTER_SET_NAME,
+                            c.COLLATION_NAME,
+                            cc.DEFINITION,
+                            ep.value AS comment
                         FROM INFORMATION_SCHEMA.COLUMNS c
                         LEFT JOIN (
                             SELECT ku.COLUMN_NAME
@@ -198,11 +220,38 @@ class MSSQLAdapter(DatabaseAdapter):
                             WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
                               AND tc.TABLE_NAME = ?
                         ) pk ON pk.COLUMN_NAME = c.COLUMN_NAME
+                        LEFT JOIN INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
+                            ON cc.CONSTRAINT_NAME = (
+                                SELECT tc2.CONSTRAINT_NAME
+                                FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu
+                                WHERE ccu.TABLE_NAME = c.TABLE_NAME
+                                  AND ccu.COLUMN_NAME = c.COLUMN_NAME
+                                  AND ccu.CONSTRAINT_NAME IN (
+                                      SELECT CONSTRAINT_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+                                      WHERE CONSTRAINT_TYPE = 'CHECK' AND TABLE_NAME = c.TABLE_NAME
+                                  )
+                            )
+                        LEFT JOIN sys.extended_properties ep
+                            ON ep.major_id = OBJECT_ID(c.TABLE_NAME)
+                            AND ep.minor_id = COLUMNPROPERTY(OBJECT_ID(c.TABLE_NAME), c.COLUMN_NAME, 'ColumnId')
+                            AND ep.name = 'MS_Description'
                         WHERE c.TABLE_NAME = ?
                         ORDER BY c.ORDINAL_POSITION
                     """, tname, tname)
                     for c in cursor.fetchall():
-                        columns.append(ColumnInfo(name=c[0], data_type=c[1], nullable=bool(c[2]), is_pk=bool(c[3])))
+                        columns.append(ColumnInfo(
+                            name=c[0], data_type=c[1],
+                            nullable=bool(c[2]), is_pk=bool(c[3]),
+                            default_value=c[4],
+                            is_identity=bool(c[5]) if c[5] is not None else False,
+                            char_length=c[6],
+                            precision=c[7],
+                            scale=c[8],
+                            character_set=c[9] if c[9] else None,
+                            collation=c[10] if c[10] else None,
+                            check_constraint=c[11] if c[11] else None,
+                            comment=c[12] if c[12] else None,
+                        ))
                     foreign_keys: list[ForeignKeyInfo] = []
                     indexes: list[IndexInfo] = []
                     try:
@@ -261,37 +310,171 @@ class MSSQLAdapter(DatabaseAdapter):
         try:
             if schema:
                 cursor.execute("""
-                    SELECT COLUMN_NAME, DATA_TYPE,
-                           CASE WHEN IS_NULLABLE = 'YES' THEN 1 ELSE 0 END,
-                           0
-                    FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
-                    ORDER BY ORDINAL_POSITION
+                    SELECT
+                        c.COLUMN_NAME, c.DATA_TYPE,
+                        CASE WHEN c.IS_NULLABLE = 'YES' THEN 1 ELSE 0 END,
+                        0,
+                        c.COLUMN_DEFAULT,
+                        COLUMNPROPERTY(OBJECT_ID(c.TABLE_NAME), c.COLUMN_NAME, 'IsIdentity'),
+                        c.CHARACTER_MAXIMUM_LENGTH,
+                        c.NUMERIC_PRECISION,
+                        c.NUMERIC_SCALE,
+                        c.CHARACTER_SET_NAME,
+                        c.COLLATION_NAME,
+                        cc.DEFINITION,
+                        ep.value AS comment
+                    FROM INFORMATION_SCHEMA.COLUMNS c
+                    LEFT JOIN INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
+                        ON cc.CONSTRAINT_NAME = (
+                            SELECT tc2.CONSTRAINT_NAME
+                            FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu
+                            WHERE ccu.TABLE_NAME = c.TABLE_NAME
+                              AND ccu.COLUMN_NAME = c.COLUMN_NAME
+                              AND ccu.CONSTRAINT_NAME IN (
+                                  SELECT CONSTRAINT_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+                                  WHERE CONSTRAINT_TYPE = 'CHECK' AND TABLE_NAME = c.TABLE_NAME
+                              )
+                        )
+                    LEFT JOIN sys.extended_properties ep
+                        ON ep.major_id = OBJECT_ID(c.TABLE_NAME)
+                        AND ep.minor_id = COLUMNPROPERTY(OBJECT_ID(c.TABLE_NAME), c.COLUMN_NAME, 'ColumnId')
+                        AND ep.name = 'MS_Description'
+                    WHERE c.TABLE_SCHEMA = ? AND c.TABLE_NAME = ?
+                    ORDER BY c.ORDINAL_POSITION
                 """, schema, table_name)
             else:
                 cursor.execute("""
-                    SELECT COLUMN_NAME, DATA_TYPE,
-                           CASE WHEN IS_NULLABLE = 'YES' THEN 1 ELSE 0 END,
-                           0
-                    FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_NAME = ?
-                    ORDER BY ORDINAL_POSITION
+                    SELECT
+                        c.COLUMN_NAME, c.DATA_TYPE,
+                        CASE WHEN c.IS_NULLABLE = 'YES' THEN 1 ELSE 0 END,
+                        0,
+                        c.COLUMN_DEFAULT,
+                        COLUMNPROPERTY(OBJECT_ID(c.TABLE_NAME), c.COLUMN_NAME, 'IsIdentity'),
+                        c.CHARACTER_MAXIMUM_LENGTH,
+                        c.NUMERIC_PRECISION,
+                        c.NUMERIC_SCALE,
+                        c.CHARACTER_SET_NAME,
+                        c.COLLATION_NAME,
+                        cc.DEFINITION,
+                        ep.value AS comment
+                    FROM INFORMATION_SCHEMA.COLUMNS c
+                    LEFT JOIN INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
+                        ON cc.CONSTRAINT_NAME = (
+                            SELECT tc2.CONSTRAINT_NAME
+                            FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu
+                            WHERE ccu.TABLE_NAME = c.TABLE_NAME
+                              AND ccu.COLUMN_NAME = c.COLUMN_NAME
+                              AND ccu.CONSTRAINT_NAME IN (
+                                  SELECT CONSTRAINT_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+                                  WHERE CONSTRAINT_TYPE = 'CHECK' AND TABLE_NAME = c.TABLE_NAME
+                              )
+                        )
+                    LEFT JOIN sys.extended_properties ep
+                        ON ep.major_id = OBJECT_ID(c.TABLE_NAME)
+                        AND ep.minor_id = COLUMNPROPERTY(OBJECT_ID(c.TABLE_NAME), c.COLUMN_NAME, 'ColumnId')
+                        AND ep.name = 'MS_Description'
+                    WHERE c.TABLE_NAME = ?
+                    ORDER BY c.ORDINAL_POSITION
                 """, table_name)
             for row in cursor.fetchall():
-                result.append(ColumnInfo(name=row[0], data_type=row[1], nullable=bool(row[2]), is_pk=bool(row[3])))
+                result.append(ColumnInfo(
+                    name=row[0], data_type=row[1],
+                    nullable=bool(row[2]), is_pk=bool(row[3]),
+                    default_value=row[4],
+                    is_identity=bool(row[5]) if row[5] is not None else False,
+                    char_length=row[6],
+                    precision=row[7],
+                    scale=row[8],
+                    character_set=row[9] if row[9] else None,
+                    collation=row[10] if row[10] else None,
+                    check_constraint=row[11] if row[11] else None,
+                    comment=row[12] if row[12] else None,
+                ))
         finally:
             cursor.close()
         return result
 
-    def test_connection(self, config: ConnectionConfig) -> bool:
+    def get_sequences(self) -> list[SequenceInfo]:
+        from domain.entities import SequenceInfo
+        result: list[SequenceInfo] = []
+        if not self._connection:
+            return result
+        cursor = self._connection.cursor()
+        try:
+            cursor.execute("""
+                SELECT name, start_value, increment
+                FROM sys.sequences
+                ORDER BY name
+            """)
+            for row in cursor.fetchall():
+                result.append(SequenceInfo(
+                    name=row[0],
+                    start_value=row[1] or 1,
+                    increment=row[2] or 1,
+                ))
+        finally:
+            cursor.close()
+        return result
+
+    def get_triggers(self) -> list[TriggerInfo]:
+        from domain.entities import TriggerInfo
+        result: list[TriggerInfo] = []
+        if not self._connection:
+            return result
+        cursor = self._connection.cursor()
+        try:
+            cursor.execute("""
+                SELECT
+                    t.name,
+                    OBJECT_NAME(t.parent_obj) AS table_name,
+                    OBJECT_DEFINITION(t.object_id) AS definition
+                FROM sys.triggers t
+                WHERE t.parent_class_desc = 'OBJECT_OR_COLUMN'
+                ORDER BY t.name
+            """)
+            for row in cursor.fetchall():
+                result.append(TriggerInfo(
+                    name=row[0],
+                    event="",
+                    body=row[2] or "",
+                    table_name=row[1] or "",
+                ))
+        finally:
+            cursor.close()
+        return result
+
+    def get_procedures(self) -> list[ProcedureInfo]:
+        from domain.entities import ProcedureInfo
+        result: list[ProcedureInfo] = []
+        if not self._connection:
+            return result
+        cursor = self._connection.cursor()
+        try:
+            cursor.execute("""
+                SELECT name, OBJECT_DEFINITION(object_id) AS definition
+                FROM sys.procedures
+                WHERE type = 'P'
+                ORDER BY name
+            """)
+            for row in cursor.fetchall():
+                result.append(ProcedureInfo(
+                    name=row[0],
+                    body=row[1] or "",
+                    source=row[1] or "",
+                ))
+        finally:
+            cursor.close()
+        return result
+
+    def test_connection(self, config: ConnectionConfig) -> tuple[bool, str]:
         conn = None
         try:
             conn_str = self._build_connection_string(config)
             conn = pyodbc.connect(conn_str, timeout=10)
             conn.execute("SELECT 1")
-            return True
-        except pyodbc.Error:
-            return False
+            return True, ""
+        except pyodbc.Error as e:
+            return False, str(e).strip()
         finally:
             if conn:
                 try:

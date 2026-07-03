@@ -39,6 +39,8 @@ python -m PyInstaller ^
     --hidden-import psycopg2 ^
     --hidden-import keyring ^
     --hidden-import keyring.backends.Windows ^
+    --hidden-import domain.migration ^
+    --hidden-import infrastructure.migration_logger ^
     --clean ^
     --noconfirm ^
     main.py

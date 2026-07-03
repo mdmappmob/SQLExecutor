@@ -83,7 +83,7 @@ class ConnectionUseCase:
         password: str = "",
         use_windows_auth: bool = True,
         port: int | None = None,
-    ) -> bool:
+    ) -> tuple[bool, str]:
         server_val = server if server else database
         config = ConnectionConfig(
             db_type=self._db_type,

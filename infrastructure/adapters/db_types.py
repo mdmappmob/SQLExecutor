@@ -8,6 +8,7 @@ class DBType(Enum):
     MYSQL = "mysql"
     MARIADB = "mariadb"
     POSTGRESQL = "postgresql"
+    SQLITE = "sqlite"
 
     @classmethod
     def choices(cls) -> list[tuple[str, str]]:
@@ -18,6 +19,7 @@ class DBType(Enum):
             (cls.MYSQL.value, "MySQL"),
             (cls.MARIADB.value, "MariaDB"),
             (cls.POSTGRESQL.value, "PostgreSQL"),
+            (cls.SQLITE.value, "SQLite"),
         ]
 
     @classmethod

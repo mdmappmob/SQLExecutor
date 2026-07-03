@@ -176,7 +176,7 @@ class ConnectionDialog(QDialog):
         if not config.get("use_windows_auth", True):
             self.sql_auth_rb.setChecked(True)
         self.timeout_spin.setValue(config.get("timeout", 30))
-        self.port_spin.setValue(config.get("port", 5432))
+        self.port_spin.setValue(config.get("port") or 5432)
         self._update_ui_for_db_type()
         self._loading = False
 
@@ -241,6 +241,17 @@ class ConnectionDialog(QDialog):
             self.password_edit.setEnabled(True)
             self._port_label.setVisible(False)
             self.port_spin.setVisible(False)
+        elif db_type == "sqlite":
+            self._server_label.setVisible(False)
+            self._server_row.setVisible(False)
+            self._database_label.setText("Arquivo do Banco:")
+            self.database_edit.setPlaceholderText("C:\\dados\\meubanco.db")
+            self._auth_choice_row.setVisible(False)
+            self.sql_auth_rb.setChecked(True)
+            self.username_edit.setEnabled(True)
+            self.password_edit.setEnabled(True)
+            self._port_label.setVisible(False)
+            self.port_spin.setVisible(False)
         else:  # postgresql
             self._server_label.setVisible(True)
             self._server_row.setVisible(True)
@@ -267,7 +278,7 @@ class ConnectionDialog(QDialog):
             "username": self.username_edit.text().strip(),
             "password": self.password_edit.text(),
             "use_windows_auth": use_windows_auth,
-            "port": self.port_spin.value(),
+            "port": self.port_spin.value() if self.port_spin.isVisible() else None,
             "timeout": self.timeout_spin.value(),
         }
 
@@ -292,7 +303,7 @@ class ConnectionDialog(QDialog):
         config = self.get_config()
         if not self._is_valid():
             QMessageBox.warning(self, I18N.main_window["validation_title"],
-                                "Preencha os campos obrigatórios (Database para Oracle/Firebird; Servidor e Database para MSSQL)")
+                                "Preencha os campos obrigatórios (Database/Arquivo para Oracle/Firebird/SQLite; Servidor e Database para MSSQL)")
             return
 
         self.test_btn.setEnabled(False)
@@ -300,7 +311,7 @@ class ConnectionDialog(QDialog):
         QApplication.processEvents()
 
         uc = self._get_connection_use_case()
-        success = uc.test_connection(
+        success, error_msg = uc.test_connection(
             server=config["server"],
             database=config["database"],
             username=config["username"],
@@ -317,14 +328,14 @@ class ConnectionDialog(QDialog):
                                     I18N.main_window["test_ok"])
             self.error_text.setVisible(False)
         else:
-            self.error_text.setPlainText(I18N.main_window["test_fail_msg"])
+            self.error_text.setPlainText(error_msg or I18N.main_window["test_fail_msg"])
             self.error_text.setVisible(True)
 
     def _on_connect(self):
         config = self.get_config()
         if not self._is_valid():
             QMessageBox.warning(self, I18N.main_window["validation_title"],
-                                "Preencha os campos obrigatórios (Database para Oracle/Firebird; Servidor e Database para MSSQL)")
+                                "Preencha os campos obrigatórios (Database/Arquivo para Oracle/Firebird/SQLite; Servidor e Database para MSSQL)")
             return
 
         self.connect_btn.setEnabled(False)

@@ -1,26 +1,4 @@
-from domain.entities import (
-    SQLCommand,
-    ExecutionResult,
-    ConnectionSession,
-    SequenceInfo,
-    TriggerInfo,
-    ViewInfo,
-    ProcedureInfo,
-    FullSchema,
-    TypeMapping,
-)
-from domain.enums import CommandType, ConnectionStatus
-from domain.interfaces import (
-    ColumnInfo,
-    ForeignKeyInfo,
-    IndexInfo,
-    TableInfo,
-    DatabaseAdapter,
-    CommandValidator,
-    AuditLogger,
-)
-from domain.value_objects import ServerName, DatabaseName, SQLText, ConnectionConfig
-from domain.migration import (
+from domain.migration.type_maps import (
     FIREBIRD_TO_POSTGRES,
     FIREBIRD_TO_MYSQL,
     FIREBIRD_TO_MARIADB,
@@ -47,7 +25,8 @@ from domain.migration import (
     MARIADB_TO_SQLITE,
     MSSQL_TO_SQLITE,
     ORACLE_TO_SQLITE,
+    FIREBIRD_TO_SQLITE,
     MAPPING_REGISTRY,
-    TypeConverter,
-    DDLGenerator,
 )
+from domain.migration.type_converter import TypeConverter
+from domain.migration.ddl_generator import DDLGenerator

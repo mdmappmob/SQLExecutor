@@ -9,6 +9,7 @@ _SQLGLOT_DIALECTS: dict[str, str | None] = {
     "mysql": "mysql",
     "mariadb": "mysql",
     "postgresql": "postgres",
+    "sqlite": "sqlite",
 }
 
 
@@ -80,6 +81,8 @@ def _map_identifiers(sql: str, target: str) -> str:
     elif target in ("oracle", "postgresql"):
         sql = re.sub(r'\[(\w+)\]', r'"\1"', sql)
         sql = re.sub(r'`(\w+)`', r'"\1"', sql)
+    elif target == "sqlite":
+        sql = sql.replace("[", '"').replace("]", '"')
     else:
         sql = re.sub(r'`(\w+)`', r'[\1]', sql)
         sql = re.sub(r'"(\w+)"', r'[\1]', sql)

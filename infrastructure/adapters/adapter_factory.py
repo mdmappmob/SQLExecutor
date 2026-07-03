@@ -25,6 +25,9 @@ class AdapterFactory:
         elif db_type == DBType.POSTGRESQL:
             from infrastructure.adapters.postgresql_adapter import PostgreSQLAdapter
             return PostgreSQLAdapter
+        elif db_type == DBType.SQLITE:
+            from infrastructure.adapters.sqlite_adapter import SQLiteAdapter
+            return SQLiteAdapter
         raise ValueError(f"Unsupported database type: {db_type.value}")
 
     @classmethod
