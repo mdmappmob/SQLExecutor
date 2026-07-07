@@ -39,7 +39,7 @@ def test_entities():
     assert SQLCommand(text=SQLText("SELECT * FROM T")).type == CommandType.SELECT
     assert SQLCommand(text=SQLText("DELETE FROM T WHERE Id = 1")).type == CommandType.DELETE
     assert SQLCommand(text=SQLText("UPDATE T SET X=1")).type == CommandType.UPDATE
-    assert SQLCommand(text=SQLText("CREATE TABLE T (Id int)")).type == CommandType.UNKNOWN
+    assert SQLCommand(text=SQLText("CREATE TABLE T (Id int)")).type == CommandType.CREATE
 
     res = ExecutionResult(True, 5, 100, "5 rows")
     assert res.rows_affected == 5
@@ -50,25 +50,40 @@ def test_entities():
 
 def test_validator():
     from domain.value_objects import SQLText
+    from domain.entities import SQLCommand
     from application.use_cases import AllowedCommandsValidator
+    from domain.enums import CommandType
 
     v = AllowedCommandsValidator()
 
-    for bad in ["DROP TABLE T", "TRUNCATE TABLE T", "ALTER TABLE T ADD X int", "CREATE TABLE T (Id int)"]:
-        try:
-            v.validate(SQLText(bad))
-            assert False, f"{bad} should be blocked"
-        except ValueError:
-            pass
+    # DDL agora é permitido para todos os bancos
+    v.validate(SQLText("CREATE TABLE T (Id int)"))
+    v.validate(SQLText("ALTER TABLE T ADD X int"))
+    v.validate(SQLText("DROP TABLE T"))
 
+    v.validate(SQLText("DELETE FROM Users WHERE Id = 1"))
+    v.validate(SQLText("INSERT INTO T VALUES (1)"))
+    v.validate(SQLText("SELECT * FROM T"))
+    v.validate(SQLText("UPDATE T SET X = 1 WHERE Id = 1"))
+
+    # DELETE sem WHERE continua bloqueado
     try:
         v.validate(SQLText("DELETE FROM Users"))
         assert False
     except ValueError:
         pass
 
-    v.validate(SQLText("DELETE FROM Users WHERE Id = 1"))
-    v.validate(SQLText("INSERT INTO T VALUES (1)"))
+    # Comando desconhecido continua bloqueado
+    try:
+        v.validate(SQLText("TRUNCATE TABLE T"))
+        assert False
+    except ValueError:
+        pass
+
+    # Verifica que CREATE, ALTER, DROP são detectados como tipos certos
+    assert SQLCommand(text=SQLText("CREATE TABLE T (Id int)")).type == CommandType.CREATE
+    assert SQLCommand(text=SQLText("ALTER TABLE T ADD X int")).type == CommandType.ALTER
+    assert SQLCommand(text=SQLText("DROP TABLE T")).type == CommandType.DROP
 
     print("  validator: OK")
 

@@ -1,8 +1,27 @@
 # SQL Executor — Documentação Completa
 
-**Versão:** 1.2.0  
-**Build:** 2026.06.23  
+**Versão:** 1.3.0  
+**Build:** 2026.07.03  
 **Autor:** Márcio Donizeti Marcondes
+
+---
+
+## STATUS ATUAL
+
+**Data:** 07/07/2026
+**Último commit relevante:** ee49d1b — v1.3.0: SQLite, MariaDB fixes, error messages, migracao universal
+**Fase atual:** Liberação de DDL para todos os bancos
+
+### Concluído nesta versão
+- [x] SQLite como 7º banco suportado
+- [x] MariaDB como dialeto separado
+- [x] DDL completo para SQLite (CREATE, ALTER, DROP)
+- [x] Migração universal entre bancos (wizard multi-etapa)
+- [x] Diálogo Sobre com créditos
+- [x] CREATE, ALTER, DROP liberados para todos os bancos
+
+### Em andamento
+- [ ] —
 
 ---
 
@@ -31,12 +50,14 @@
 14. [Arquivos de Configuração](#14-arquivos-de-configuração)
 15. [Build e Distribuição](#15-build-e-distribuição)
 16. [Arquitetura do Projeto](#16-arquitetura-do-projeto)
+17. [Migração Universal](#17-migração-universal)
+18. [Diálogo Sobre](#18-diálogo-sobre)
 
 ---
 
 ## 1. Visão Geral
 
-O **SQL Executor** é uma aplicação desktop para execução de comandos SQL em múltiplos bancos de dados relacionais. Suporta **6 dialetos**:
+O **SQL Executor** é uma aplicação desktop para execução de comandos SQL em múltiplos bancos de dados relacionais. Suporta **7 dialetos**:
 
 | Banco | Driver | Adapter |
 |---|---|---|
@@ -46,11 +67,12 @@ O **SQL Executor** é uma aplicação desktop para execução de comandos SQL em
 | MySQL | `pymysql` | `MySQLAdapter` |
 | MariaDB | `pymysql` | `MariaDBAdapter` |
 | PostgreSQL | `psycopg2` | `PostgreSQLAdapter` |
+| **SQLite** | `sqlite3` | `SQLiteAdapter` |
 
 ### Funcionalidades principais
 
 - Editor SQL com múltiplas abas, syntax highlight, find/replace
-- Execução de SELECT, INSERT, UPDATE, DELETE (DDL bloqueado por segurança)
+- Execução de SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP
 - Paginação de resultados (50 a 1000 linhas por página)
 - Edição inline de resultados com geração automática de UPDATE/DELETE
 - Importação CSV com batch insert e commit/rollback individual
@@ -60,6 +82,8 @@ O **SQL Executor** é uma aplicação desktop para execução de comandos SQL em
 - Tradutor SQL entre dialetos (sqlglot)
 - Logs de auditoria em CSV
 - Reconexão automática via sessão persistente
+- Migração universal entre bancos (wizard multi-etapa)
+- Diálogo "Sobre" com créditos e versão
 
 ---
 
@@ -102,6 +126,7 @@ pip install -r requirements.txt
 | `openpyxl` | Exportação para Excel |
 | `sqlglot` | Parser SQL e tradutor entre dialetos |
 | `keyring` | Armazenamento seguro de senhas no Credential Manager do SO |
+| `sqlite3` | Driver SQLite (built-in, sem instalação adicional) |
 
 ### 2.4 Executar
 
@@ -181,6 +206,7 @@ Exibe:
    - **Firebird:** caminho do banco (ex: `localhost/3050:C:\db\banco.fdb`)
    - **MySQL/MariaDB:** servidor, database/schema
    - **PostgreSQL:** servidor, database
+   - **SQLite:** caminho do arquivo .db/.sqlite (file picker, sem usuário/senha)
 4. Informe usuário e senha (ou Windows Auth para MSSQL)
 5. Clique em **Testar** para validar a conexão
 6. Clique em **Conectar**
@@ -233,14 +259,18 @@ Destaca automaticamente:
 Apenas os seguintes comandos podem ser executados:
 
 | Comando | Observação |
-|---|---|
+|---|---|---|
 | `SELECT` | Qualquer consulta |
 | `INSERT` | Apenas VALUES |
 | `UPDATE` | Requer WHERE |
 | `DELETE` | **Exige WHERE** (bloqueado sem) |
-| CTE (`WITH`) | Permitido se o comando final for SELECT/INSERT/UPDATE/DELETE |
+| `CREATE` | CREATE TABLE, CREATE INDEX, CREATE VIEW, etc. |
+| `ALTER` | ALTER TABLE, ALTER COLUMN, etc. |
+| `DROP` | DROP TABLE, DROP INDEX, DROP VIEW, etc. |
+| `MIGRACAO` | ✅ Suportado |
+| `CTE (WITH)` | Permitido se o comando final for SELECT/INSERT/UPDATE/DELETE |
 
-**DDL bloqueado:** `CREATE`, `DROP`, `ALTER`, `TRUNCATE`, `GRANT`, `REVOKE` são rejeitados.
+**Comandos bloqueados:** `TRUNCATE`, `GRANT`, `REVOKE` são rejeitados por segurança.
 
 ### 5.5 Parâmetros nomeados
 
@@ -397,6 +427,12 @@ Painel lateral esquerdo que exibe a estrutura do banco conectado.
     └── ...
 📁 VIEWS
 └── 📄 vw_relatorio
+📁 PROCEDURES
+└── 📄 sp_relatorio_mensal
+📁 TRIGGERS
+└── 📄 trg_auditoria_update
+📁 SEQUENCES (Oracle/PostgreSQL/Firebird)
+└── 📄 seq_pedido_id
 ```
 
 **Legenda:**
@@ -407,11 +443,13 @@ Painel lateral esquerdo que exibe a estrutura do banco conectado.
 ### 8.2 Ações disponíveis
 
 | Ação | Como fazer |
-|---|---|
+|---|---|---|
 | Inserir nome da tabela no editor | **Duplo clique** na tabela |
 | Gerar CREATE TABLE | **Clique direito** na tabela → "Gerar CREATE TABLE" |
 | Gerar DROP TABLE | **Clique direito** na tabela → "Gerar DROP TABLE" |
 | Gerar SELECT * | **Clique direito** na tabela/VIEW → "Gerar SELECT *" |
+| Gerar CREATE PROCEDURE/FUNCTION | **Clique direito** na procedure → "Gerar CREATE PROCEDURE" |
+| Gerar CREATE TRIGGER | **Clique direito** no trigger → "Gerar CREATE TRIGGER" |
 
 ### 8.3 DDL gerado (CREATE TABLE)
 
@@ -680,6 +718,12 @@ SQLExecutor/
 │   └── dialect/                     # Tradutor SQL
 │       ├── __init__.py
 │       └── translator.py            # Função translate(sql, source, target)
+│   ├── migration/                     # Subsistema de migração
+│   │   ├── __init__.py
+│   │   ├── type_maps.py               # 27 mapas bidirecionais de tipos
+│   │   ├── type_converter.py          # Conversor com detecção de conflitos
+│   │   ├── ddl_generator.py           # Gerador de DDL com ordenação topológica
+│   │   └── mapping_template.py        # Templates JSON de overrides
 │
 ├── application/                     # ——— Camada de Aplicação ———
 │   └── use_cases.py                 # ConnectionUseCase, SQLExecutionUseCase, AllowedCommandsValidator
@@ -692,6 +736,7 @@ SQLExecutor/
 │   ├── session.py                   # Sessão persistente (JSON)
 │   ├── bookmarks.py                 # Favoritos (JSON)
 │   ├── csv_parser.py                # Parser CSV + batch insert
+│   ├── migration_logger.py         # Logger de migração
 │   ├── oracle_client/               # Oracle Instant Client DLLs (LFS)
 │   ├── firebird_client/             # fbclient.dll (LFS)
 │   └── adapters/                    # Adaptadores de banco
@@ -702,7 +747,8 @@ SQLExecutor/
 │       ├── firebird_adapter.py      # Firebird (fdb)
 │       ├── mysql_adapter.py         # MySQL (pymysql)
 │       ├── mariadb_adapter.py       # MariaDB (pymysql, herda MySQLAdapter)
-│       └── postgresql_adapter.py    # PostgreSQL (psycopg2)
+│       ├── postgresql_adapter.py    # PostgreSQL (psycopg2)
+│       └── sqlite_adapter.py         # SQLite (sqlite3)
 │
 ├── ui/                              # ——— Camada de Interface ———
 │   ├── main_window.py               # Janela principal, menu, sinais, shortcuts
@@ -714,6 +760,8 @@ SQLExecutor/
 │   ├── parameter_dialog.py          # Diálogo de parâmetros nomeados
 │   ├── translate_dialog.py          # Diálogo do tradutor SQL
 │   ├── schema_browser.py            # Árvore de tabelas/colunas com FK, índices, geração de DDL
+│   ├── migration_dialog.py         # Wizard de migração (945 linhas)
+│   ├── about_dialog.py             # Diálogo Sobre
 │   ├── history_panel.py             # Histórico de comandos
 │   └── bookmarks_panel.py           # Gerenciamento de favoritos
 │
@@ -725,6 +773,85 @@ SQLExecutor/
 └── build/                           # Artefatos de build (gitignored)
     └── SQLExecutor/
 ```
+
+---
+
+## 17. Migração Universal
+
+Permite migrar o esquema completo de um banco de dados entre diferentes dialetos.
+
+### 17.1 Como acessar
+
+Clique no botão **Migrar** (vermelho) na barra de ferramentas do editor.
+
+### 17.2 Wizard multi-etapa
+
+1. **Origem:** selecione o banco de origem e conecte
+2. **Destino:** selecione o banco de destino
+3. **Mapeamento:** revise a conversão automática de tipos
+   - Tabela interativa com coluna origem → tipo destino
+   - Alertas visuais (⚠️) para conversões com possíveis perdas
+   - Checkboxes para overrides manuais por coluna
+4. **DDL Gerado:** script completo pronto para revisão e execução
+
+### 17.3 Funcionalidades
+
+- **27 mapas bidirecionais** de conversão de tipos entre todos os pares de dialetos
+- **Ordenação topológica** de tabelas (respeita dependências FK)
+- **Templates JSON** salvos/carregados com overrides por coluna, tabela ou globais
+- **Quoting adaptado** por dialeto (`"` para PG, `` ` `` para MySQL, `[]` para MSSQL)
+- **Suporte a SQLite** como origem ou destino
+- **DDL completo no SQLite**: CREATE TABLE, ALTER TABLE, DROP TABLE, CREATE INDEX, DROP INDEX
+- Logs dedicados em `logs/migration_log.csv`
+
+### 17.4 Objetos migrados
+
+| Objeto | Migrado | Observação |
+|--------|---------|------------|
+| Tabelas (CREATE TABLE) | ✅ | Com PK, FK, constraints, defaults |
+| Colunas + tipos | ✅ | Conversão automática com mapa de tipos |
+| Sequences | ✅ | PostgreSQL, Oracle, Firebird |
+| Views | ✅ | CREATE VIEW |
+| Triggers | ✅ | CREATE TRIGGER |
+| Procedures/Functions | ✅ | CREATE PROCEDURE/FUNCTION |
+| Índices | ✅ | CREATE INDEX |
+| **SQLite** | ✅ | Suporta todos os objetos acima |
+
+### 17.5 Exemplo de migração para SQLite
+
+```sql
+-- Origem: MySQL
+CREATE TABLE usuarios (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nome VARCHAR(50) NOT NULL
+);
+
+-- Destino: SQLite (gerado automaticamente)
+CREATE TABLE usuarios (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nome TEXT NOT NULL
+);
+```
+
+### 17.6 Limitações
+
+- Triggers e procedures podem exigir ajuste manual de sintaxe (dialetos muito diferentes)
+- Dados (INSERT) não são migrados — apenas estrutura (DDL)
+- Firebird 2.5 tem suporte limitado a alguns tipos modernos
+- SQLite não suporta sequences (convertido para AUTOINCREMENT quando aplicável)
+
+---
+
+## 18. Diálogo Sobre
+
+Acessível pelo menu **Ajuda > Sobre**.
+
+Exibe:
+- Nome e versão do aplicativo
+- Build e autor
+- Tecnologias utilizadas (Python, PySide6, PyInstaller)
+- Bancos suportados (todos os 7)
+- Descrição da ferramenta
 
 ---
 

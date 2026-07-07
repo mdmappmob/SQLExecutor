@@ -6,6 +6,9 @@ class CommandType(Enum):
     INSERT = "INSERT"
     DELETE = "DELETE"
     UPDATE = "UPDATE"
+    CREATE = "CREATE"
+    ALTER = "ALTER"
+    DROP = "DROP"
     UNKNOWN = "UNKNOWN"
 
 

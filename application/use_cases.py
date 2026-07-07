@@ -8,10 +8,14 @@ from infrastructure.i18n import I18N
 
 
 class AllowedCommandsValidator(CommandValidator):
-    ALLOWED = {CommandType.SELECT, CommandType.INSERT, CommandType.DELETE, CommandType.UPDATE}
+    ALLOWED = {
+        CommandType.SELECT, CommandType.INSERT, CommandType.DELETE, CommandType.UPDATE,
+        CommandType.CREATE, CommandType.ALTER, CommandType.DROP,
+    }
 
     def validate(self, sql: SQLText) -> None:
         cmd = SQLCommand(text=sql)
+
         if cmd.type not in self.ALLOWED:
             raise ValueError(
                 I18N.application["cmd_not_allowed"].format(

@@ -317,3 +317,49 @@ Precisão tem prioridade sobre velocidade.
 Confiabilidade tem prioridade sobre completude.
 
 É proibido inventar informações para preencher requisitos ausentes.
+
+---
+
+# CONTROLE DE ESTADO DO PROJETO
+
+## DOCUMENTACAO.md — Registro canônico do projeto
+
+O arquivo `DOCUMENTACAO.md` na raiz do projeto é o registro oficial do estado atual do software.
+
+### Atualização obrigatória
+
+`DOCUMENTACAO.md` deve ser atualizado nos seguintes momentos:
+
+1. **Plano aprovado:** sempre que um planejamento for aprovado pelo usuário, registrar as decisões e o novo escopo.
+2. **Fase concluída:** sempre que uma fase, milestone ou funcionalidade for concluída, atualizar o status.
+3. **Mudança de requisitos:** sempre que houver alteração de escopo, arquitetura ou decisão técnica.
+4. **Encerramento do dia:** ao final de cada sessão de trabalho, atualizar o registro com o que foi feito, o que está pendente e o próximo passo.
+5. **Alteração de código:** sempre que novos arquivos, módulos ou adaptadores forem criados/removidos.
+
+### Formato mínimo esperado
+
+No topo do documento (após cabeçalho), manter:
+
+```markdown
+## STATUS ATUAL
+
+**Data:** dd/MM/yyyy
+**Último commit relevante:** <hash curto> — <mensagem>
+**Fase atual:** <nome da fase em andamento>
+
+### Concluído nesta versão
+- [x] Item concluído
+
+### Em andamento
+- [ ] Item em andamento
+
+### Pendente (próximos passos)
+- [ ] Próximo item planejado
+```
+
+### Benefício
+
+Ao recomeçar o trabalho em um novo dia/sessão, qualquer IA ou desenvolvedor pode ler `DOCUMENTACAO.md` e compreender **exatamente** onde o projeto está, evitando:
+- Interpretações divergentes do escopo
+- Retrabalho em funcionalidades já concluídas
+- Perda de contexto de decisões anteriores

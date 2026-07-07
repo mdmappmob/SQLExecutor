@@ -44,7 +44,7 @@ class AboutDialog(QDialog):
         layout.addWidget(tech)
 
         dbs = QLabel(
-            "<b>Bancos suportados:</b> MSSQL, Oracle, Firebird, PostgreSQL, MySQL/MariaDB"
+            "<b>Bancos suportados:</b> MSSQL, Oracle, Firebird, PostgreSQL, MySQL/MariaDB, SQLite"
         )
         dbs.setAlignment(Qt.AlignCenter)
         dbs.setStyleSheet("font-size: 12px; color: #555;")
