@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt
 
 from infrastructure.i18n import I18N
 from infrastructure.adapters.db_types import DBType
+from infrastructure.connection_history import ConnectionHistory, format_history_label
 
 
 class ConnectionDialog(QDialog):
@@ -19,6 +20,7 @@ class ConnectionDialog(QDialog):
         self._build_ui()
         if config:
             self._load_config(config)
+        self._populate_history()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -26,6 +28,10 @@ class ConnectionDialog(QDialog):
 
         form = QFormLayout()
         form.setSpacing(8)
+
+        self.history_combo = QComboBox()
+        self.history_combo.currentIndexChanged.connect(self._on_history_selected)
+        form.addRow(I18N.connection_panel["recent_connections"], self.history_combo)
 
         self.db_type_combo = QComboBox()
         for value, label in DBType.choices():
@@ -183,6 +189,8 @@ class ConnectionDialog(QDialog):
     def _on_db_type_changed(self):
         if self._loading:
             return
+        if self.history_combo.currentIndex() != 0:
+            self.history_combo.setCurrentIndex(0)
         self.server_edit.clear()
         self.database_edit.clear()
         self.username_edit.clear()
@@ -362,3 +370,18 @@ class ConnectionDialog(QDialog):
         else:
             self.error_text.setPlainText(session.error_message)
             self.error_text.setVisible(True)
+
+    def _populate_history(self):
+        self.history_combo.blockSignals(True)
+        self.history_combo.clear()
+        self.history_combo.addItem(I18N.connection_panel["new_connection"])
+        for entry in ConnectionHistory().recent():
+            self.history_combo.addItem(format_history_label(entry), entry)
+        self.history_combo.blockSignals(False)
+
+    def _on_history_selected(self, index):
+        if self._loading or index <= 0:
+            return
+        entry = self.history_combo.itemData(index)
+        if entry:
+            self._load_config(entry)

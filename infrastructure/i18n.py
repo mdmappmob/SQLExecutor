@@ -65,6 +65,12 @@ class _I18n:
         "status_disconnected": "Desconectado",
         "status_connected": "Conectado a {server}",
         "status_error": "Erro: {msg}",
+        "recent_connections": "Conexões recentes:",
+        "recent_menu": "Conexões &Recentes",
+        "new_connection": "— Nova conexão —",
+        "clear_history": "Limpar histórico",
+        "no_recent_connections": "Nenhuma conexão recente",
+        "clear_history_confirm": "Limpar todo o histórico de conexões?",
     })
 
     sql_editor: dict = field(default_factory=lambda: {

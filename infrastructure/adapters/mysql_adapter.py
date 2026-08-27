@@ -158,6 +158,9 @@ class MySQLAdapter(DatabaseAdapter):
                 columns: list[ColumnInfo] = []
                 cursor.execute("""
                     SELECT COLUMN_NAME, DATA_TYPE,
+                           CHARACTER_MAXIMUM_LENGTH,
+                           NUMERIC_PRECISION,
+                           NUMERIC_SCALE,
                            CASE WHEN IS_NULLABLE = 'YES' THEN 1 ELSE 0 END,
                            CASE WHEN COLUMN_KEY = 'PRI' THEN 1 ELSE 0 END
                     FROM information_schema.COLUMNS
@@ -166,7 +169,11 @@ class MySQLAdapter(DatabaseAdapter):
                     ORDER BY ORDINAL_POSITION
                 """, (tname,))
                 for c in cursor.fetchall():
-                    columns.append(ColumnInfo(name=c[0], data_type=c[1], nullable=bool(c[2]), is_pk=bool(c[3])))
+                    columns.append(ColumnInfo(
+                        name=c[0], data_type=c[1],
+                        char_length=c[2], precision=c[3], scale=c[4],
+                        nullable=bool(c[5]), is_pk=bool(c[6]),
+                    ))
                 foreign_keys: list[ForeignKeyInfo] = []
                 indexes: list[IndexInfo] = []
                 if type_label == "TABLE":

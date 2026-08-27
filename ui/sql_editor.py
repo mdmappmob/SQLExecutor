@@ -204,11 +204,41 @@ def strip_sql_comments(sql: str) -> str:
 
 
 def format_sql(sql: str) -> str:
-    from sqlglot import transpile
+    import sqlglot
     from sqlglot.errors import ParseError
+
+    class _NoAsAliasGenerator(sqlglot.generator.Generator):
+        def table_sql(self, expression, sep=" "):
+            return super().table_sql(expression, sep=sep)
+
+        def subquery_sql(self, expression, sep=" "):
+            return super().subquery_sql(expression, sep=sep)
+
+        def values_sql(self, expression, values_as_table=True):
+            values_as_table = values_as_table and self.VALUES_AS_TABLE
+            if values_as_table or not expression.find_ancestor(
+                sqlglot.exp.From, sqlglot.exp.Join
+            ):
+                args = self.expressions(expression)
+                alias = self.sql(expression, "alias")
+                values = f"VALUES{self.seg('')}{args}"
+                values = (
+                    f"({values})"
+                    if self.WRAP_DERIVED_VALUES
+                    and (alias or isinstance(expression.parent, (sqlglot.exp.From, sqlglot.exp.Table)))
+                    else values
+                )
+                values = self.query_modifiers(expression, values)
+                return f"{values} {alias}" if alias else values
+            return super().values_sql(expression, values_as_table=values_as_table)
+
+    class _NoAsDialect(sqlglot.dialects.dialect.Dialect):
+        generator_class = _NoAsAliasGenerator
+
     try:
-        result = transpile(
+        result = sqlglot.transpile(
             sql,
+            write=_NoAsDialect,
             pretty=True,
             error_level=None,
         )

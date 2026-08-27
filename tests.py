@@ -224,6 +224,82 @@ def test_ui_imports():
     print("  UI module imports: OK")
 
 
+def test_format_sql():
+    from ui.sql_editor import format_sql
+
+    cases = [
+        ("SELECT * FROM clientes AS c WHERE c.id = 1", "FROM clientes c", True),
+        ("SELECT * FROM clientes AS c WHERE c.id = 1", "FROM clientes AS c", False),
+        (
+            "SELECT * FROM a AS x LEFT JOIN (SELECT id, SUM(v) AS sv FROM b GROUP BY id) AS d ON x.id = d.id",
+            ") d",
+            True,
+        ),
+        (
+            "SELECT * FROM a AS x LEFT JOIN (SELECT id, SUM(v) AS sv FROM b GROUP BY id) AS d ON x.id = d.id",
+            ") AS d",
+            False,
+        ),
+        ("WITH x AS (SELECT 1 AS n) SELECT * FROM x AS t", "WITH x AS", True),
+        ("SELECT a, SUM(b) OVER (PARTITION BY c) AS total FROM t GROUP BY a", "AS total", True),
+        ("SELECT * FROM (VALUES (1), (2)) AS t(a)", ") t(a)", True),
+    ]
+
+    for sql, needle, present in cases:
+        out = format_sql(sql)
+        assert (needle in out) == present, f"esperado '{needle}' present={present} mas saiu:\n{out}"
+
+    print("  format_sql (aliases de tabela sem AS): OK")
+
+
+def test_connection_history():
+    import json
+    import tempfile
+    from infrastructure.connection_history import ConnectionHistory
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "history.json")
+        h = ConnectionHistory(file_path=path)
+
+        cfg = {
+            "db_type": "mssql", "server": "SrvA", "database": "Db1",
+            "username": "sa", "password": "s3nha_fake_db_type=mssql",
+            "use_windows_auth": False, "port": None, "timeout": 30,
+        }
+        h.record(cfg)
+
+        raw = open(path, encoding="utf-8").read()
+        assert "s3nha_fake_db_type=mssql" not in raw, "senha vazou no arquivo"
+        assert "password" not in json.loads(raw)[0], "chave password gravada"
+
+        entries = h.recent()
+        assert len(entries) == 1
+        assert entries[0]["database"] == "Db1"
+        assert entries[0]["uses"] == 1
+
+        cfg2 = {
+            "db_type": "mssql", "server": "srva", "database": "db1",
+            "username": "SA", "password": "outra",
+            "use_windows_auth": False, "port": None, "timeout": 30,
+        }
+        h.record(cfg2)
+        assert len(h.recent()) == 1, "dedupe case-insensitive falhou"
+        assert h.recent()[0]["uses"] == 2
+
+        for i in range(20):
+            h.record({
+                "db_type": "postgresql", "server": f"srv{i}", "database": f"db{i}",
+                "username": "u", "password": "p", "use_windows_auth": False,
+                "port": 5432, "timeout": 30,
+            })
+        assert len(h.recent()) == 10, "prune falhou"
+
+        h.clear()
+        assert h.recent() == []
+
+    print("  connection_history (sem senha, dedupe, prune): OK")
+
+
 if __name__ == "__main__":
     tests = [
         ("Value Objects", test_value_objects),
@@ -233,6 +309,8 @@ if __name__ == "__main__":
         ("Logger", test_logger),
         ("UseCases", test_use_cases),
         ("UI Imports", test_ui_imports),
+        ("format_sql", test_format_sql),
+        ("Connection History", test_connection_history),
     ]
 
     passed = 0

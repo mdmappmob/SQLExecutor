@@ -1,27 +1,49 @@
 # SQL Executor — Documentação Completa
 
-**Versão:** 1.3.0  
-**Build:** 2026.07.03  
+**Versão:** 1.4.1  
+**Build:** 2026.07.15  
 **Autor:** Márcio Donizeti Marcondes
 
 ---
 
 ## STATUS ATUAL
 
-**Data:** 07/07/2026
-**Último commit relevante:** ee49d1b — v1.3.0: SQLite, MariaDB fixes, error messages, migracao universal
-**Fase atual:** Liberação de DDL para todos os bancos
+**Data:** 27/08/2026
+**Último commit relevante:** (working tree) — Histórico de conexões (recentes) sem senha + fix do port na reconexão
+**Fase atual:** Encerramento de sessão — 27/08/2026
 
 ### Concluído nesta versão
-- [x] SQLite como 7º banco suportado
-- [x] MariaDB como dialeto separado
-- [x] DDL completo para SQLite (CREATE, ALTER, DROP)
-- [x] Migração universal entre bancos (wizard multi-etapa)
-- [x] Diálogo Sobre com créditos
-- [x] CREATE, ALTER, DROP liberados para todos os bancos
+- [x] Oracle adapter: detecção automática de colunas `COLLATION` e `IDENTITY_COLUMN` (Oracle 12c+ vs 11g)
+- [x] Oracle adapter: queries adaptativas com fallback para `NULL` / `0` quando colunas não existem
+- [x] Oracle adapter: otimização do `get_schema()` — consulta única de colunas (em vez de N queries por tabela)
+- [x] Oracle adapter: remoção de subconsultas correlacionadas lentas (check constraints) — uso de derived tables com hash-join
+- [x] **[PERFORMANCE]** Oracle adapter: `get_schema()` otimizado — detecção de PK via `LEFT JOIN` (substitui subconsulta correlacionada `EXISTS` por coluna); FK e índices consultados por owner (schema inteiro) com joins por `OWNER`/`R_OWNER`/`INDEX_OWNER` (corrige cruzamento de owners e elimina o `IN` list gigante que causava ORA-01795 silencioso em schemas com >1000 tabelas); tuning de fetch com `arraysize`/`prefetchrows` = 1000; erros de FK/índices agora são logados (antes eram silenciados) — **validado em produção pelo usuário: carga de tabelas e views ficou rápida**
+- [x] **[CORREÇÃO CRÍTICA]** Oracle adapter: eliminação de colunas duplicadas no schema browser
+- [x] **[CORREÇÃO]** Formatador SQL (`format_sql`): removido `AS` de aliases de tabelas em FROM/JOIN (tabelas simples, derived tables/subqueries e VALUES) via Generator customizado do sqlglot, mantendo `AS` em aliases de coluna e CTE (substitui a abordagem anterior por regex)
+- [x] **[NOVO]** Histórico de bases conectadas (`ConnectionHistory` em `infrastructure/connection_history.py`): registra automaticamente toda conexão bem-sucedida (manual e auto-conexão) em `%APPDATA%\SQLExecutor\connections_history.json`, SEM armazenar a senha (whitelist de campos); dedupe case-insensitive por (db_type, server, database, username, use_windows_auth); ordena por `last_used` (UTC); mantém no máximo 10 entradas (prune); gravação atômica. Seleção via combo "Conexões recentes" no diálogo de conexão e via submenu "Conexões &Recentes" no menu Conexão (abre o diálogo pré-preenchido, senha em branco); ação "Limpar histórico" com confirmação
+- [x] **[CORREÇÃO]** Conexão: `port` agora é repassado ao conectar (`_on_connect_dialog`/`_auto_connect`/`_connect_with_config`) — antes a porta escolhida no diálogo (ex.: PostgreSQL) era ignorada na reconexão
 
 ### Em andamento
-- [ ] —
+- [ ] Testes de regressão nas outras bases (MSSQL, Firebird, MySQL, MariaDB, PostgreSQL, SQLite)
+
+### Pendente (próximos passos)
+- [ ] Executar a suíte de regressão nos demais dialetos (7 suportados)
+- [ ] (Se necessário) novo teste de performance do schema loading Oracle em volume ainda maior
+
+---
+
+## Encerramento do dia — 27/08/2026
+
+**Feito hoje:**
+- Formatador SQL: remoção de `AS` em aliases de tabelas derivadas (subqueries e VALUES) via Generator customizado do sqlglot — `AS` mantido em aliases de coluna e CTE.
+- Oracle `get_schema()` otimizado (PK via `LEFT JOIN`, remoção do `IN` list gigante em FK/índices com correção de cross-owner, fetch tuning `arraysize`/`prefetchrows`, log de erros no lugar de `except: pass`). **Confirmado pelo usuário: carga de tabelas e views ficou rápida.**
+- Histórico de bases conectadas sem senha (`ConnectionHistory`) + combo no diálogo de conexão + submenu "Conexões &Recentes" + fix do `port` na reconexão.
+
+**Validação:** `python tests.py` → `9 passed, 0 failed`.
+
+**Pendente:** testes de regressão nas demais bases (MSSQL, Firebird, MySQL, MariaDB, PostgreSQL, SQLite).
+
+**Próximo passo:** rodar a suíte de regressão nos outros dialetos e, se preciso, novo teste de performance do schema loading Oracle em volume maior.
 
 ---
 
@@ -51,7 +73,8 @@
 15. [Build e Distribuição](#15-build-e-distribuição)
 16. [Arquitetura do Projeto](#16-arquitetura-do-projeto)
 17. [Migração Universal](#17-migração-universal)
-18. [Diálogo Sobre](#18-diálogo-sobre)
+18. [Notas Técnicas e Limitações Conhecidas](#18-notas-técnicas-e-limitações-conhecidas)
+19. [Diálogo Sobre](#19-diálogo-sobre)
 
 ---
 
@@ -271,6 +294,17 @@ Apenas os seguintes comandos podem ser executados:
 | `CTE (WITH)` | Permitido se o comando final for SELECT/INSERT/UPDATE/DELETE |
 
 **Comandos bloqueados:** `TRUNCATE`, `GRANT`, `REVOKE` são rejeitados por segurança.
+
+### 5.5 Edição inline com sintaxe `edit`
+
+Para editar dados diretamente no grid de resultados, adicione a palavra **`edit`** ao final do SELECT (antes do `;`):
+
+```sql
+SELECT * FROM plano_referencial_sped WHERE ano_calendario = 2025 edit;
+```
+- A palavra `edit` é removida automaticamente antes da execução
+- Sem `edit`, o SELECT é executado normalmente sem modo de edição
+- Multi-query: se houver múltiplos SELECTs, apenas o que tiver `edit` será exibido
 
 ### 5.5 Parâmetros nomeados
 
@@ -842,7 +876,42 @@ CREATE TABLE usuarios (
 
 ---
 
-## 18. Diálogo Sobre
+## 18. Notas Técnicas e Limitações Conhecidas
+
+### 18.1 Oracle — Tipo LONG e Schema Loading
+
+**Problema:** O Oracle utiliza o tipo `LONG` para colunas como `SEARCH_CONDITION` (ALL_CONSTRAINTS) e `COMMENTS` (ALL_COL_COMMENTS). O tipo `LONG` apresenta restrições severas:
+- Não pode ser utilizado em subqueries
+- Não pode ser utilizado em expressões CASE
+- Não pode ser utilizado com funções de agregação (MAX, MIN, etc.)
+
+**Solução adotada:** As colunas `SEARCH_CONDITION` e `COMMENTS` são mantidas em LEFT JOINs na query principal (onde LONG é permitido), enquanto a detecção de PRIMARY KEY utiliza subquery `EXISTS` (que retorna apenas TRUE/FALSE, sem LONG).
+
+**Deduplicação em Python:** Para garantir que colunas não se repitam (mesmo com LEFT JOINs), o código Python utiliza um `set` de controle (`seen_cols`) para ignorar linhas duplicadas.
+
+**Status:** ✅ Corrigido — colunas duplicadas eliminadas. Performance do schema loading pendente de validação em bancos Oracle de grande volume.
+
+### 18.2 Oracle — Mapeamento de Foreign Keys
+
+**Nota:** O mapeamento FK→PK utiliza `acc.POSITION = ref_acc.POSITION` na subquery de chaves estrangeiras. Esta abordagem é correta para a maioria dos casos, mas pode apresentar resultados incorretos para chaves compostas onde a ordem das colunas na FK difere da ordem na PK referenciada.
+
+**Status:** ⚠️ Conhecido — aceitável para uso geral. Correção futura pode ser necessária para casos extremos.
+
+### 18.3 Testes Pendentes
+
+| Base de Dados | Schema Loading | Colunas | FK | Índices |
+|---------------|----------------|---------|-----|---------|
+| Oracle        | ✅ Sem duplicatas (pendente performance) | ✅ | ⚠️ POSITION join | ⚠️ |
+| MSSQL         | ⚠️ Pendente teste regressão | ⚠️ | ⚠️ | ⚠️ |
+| Firebird      | ⚠️ Pendente teste regressão | ⚠️ | ⚠️ | ⚠️ |
+| MySQL         | ⚠️ Pendente teste regressão | ⚠️ | ⚠️ | ⚠️ |
+| MariaDB       | ⚠️ Pendente teste regressão | ⚠️ | ⚠️ | ⚠️ |
+| PostgreSQL    | ⚠️ Pendente teste regressão | ⚠️ | ⚠️ | ⚠️ |
+| SQLite        | ⚠️ Pendente teste regressão | ⚠️ | ⚠️ | ⚠️ |
+
+---
+
+## 19. Diálogo Sobre
 
 Acessível pelo menu **Ajuda > Sobre**.
 

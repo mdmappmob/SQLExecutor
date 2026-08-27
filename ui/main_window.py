@@ -13,6 +13,7 @@ from application.use_cases import ConnectionUseCase, SQLExecutionUseCase
 from infrastructure.adapters.adapter_factory import AdapterFactory
 from infrastructure.logger import CSVLogger
 from infrastructure.config_manager import ConfigManager
+from infrastructure.connection_history import ConnectionHistory, format_history_label
 from ui.sql_editor import SQLEditor, strip_sql_comments, split_sql_statements
 from ui.result_panel import ResultPanel
 from ui.connection_dialog import ConnectionDialog
@@ -69,6 +70,7 @@ class MainWindow(QMainWindow):
         self._db_type = "mssql"
         self._logger = CSVLogger()
         self._config_mgr = ConfigManager()
+        self._connection_history = ConnectionHistory()
         self._adapter = AdapterFactory.create(self._db_type)
         self._connection_uc = ConnectionUseCase(self._adapter, self._logger, self._db_type)
         self._execution_uc = SQLExecutionUseCase(self._adapter, self._logger)
@@ -96,6 +98,9 @@ class MainWindow(QMainWindow):
         self._disconnect_action.setEnabled(False)
         self._disconnect_action.triggered.connect(self._on_disconnect)
         conn_menu.addAction(self._disconnect_action)
+
+        self._recent_menu = conn_menu.addMenu(I18N.connection_panel["recent_menu"])
+        self._refresh_recent_menu()
 
         self._file_menu = menubar.addMenu("&Arquivo")
         self._file_menu.setEnabled(False)
@@ -320,6 +325,7 @@ class MainWindow(QMainWindow):
             password=cfg.get("password", ""),
             use_windows_auth=cfg["use_windows_auth"],
             timeout=cfg["timeout"],
+            port=cfg.get("port"),
         )
         session = self._connection_uc.session
         if session.status.value == "Connected":
@@ -329,6 +335,7 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(
                 I18N.main_window["auto_connected"].format(server=cfg['server'], db=cfg['database'])
             )
+            self._record_connection_history(cfg)
         else:
             self._update_connection_status()
             self.status_bar.showMessage(I18N.main_window["auto_connect_fail"], 5000)
@@ -342,8 +349,10 @@ class MainWindow(QMainWindow):
             return
         if dialog.exec() != QDialog.Accepted:
             return
-
         config = dialog.get_config()
+        self._connect_with_config(config)
+
+    def _connect_with_config(self, config: dict):
         db_type = config["db_type"]
         if not config["database"] or (db_type == "mssql" and not config["server"]):
             QMessageBox.warning(self, I18N.main_window["validation_title"],
@@ -366,6 +375,7 @@ class MainWindow(QMainWindow):
             password=config["password"],
             use_windows_auth=config["use_windows_auth"],
             timeout=config["timeout"],
+            port=config.get("port"),
         )
 
         if session.status.value == "Connected":
@@ -376,9 +386,51 @@ class MainWindow(QMainWindow):
                 I18N.main_window["connected_to"].format(server=config['server'], db=config['database'])
             )
             self._config_mgr.save(config)
+            self._record_connection_history(config)
         else:
             self._update_connection_status()
             self.status_bar.showMessage(I18N.main_window["connection_failed"])
+
+    def _on_connect_from_history(self, entry: dict):
+        config = dict(entry)
+        config["password"] = ""
+        dialog = ConnectionDialog(self, config)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        config = dialog.get_config()
+        self._connect_with_config(config)
+
+    def _record_connection_history(self, config: dict):
+        try:
+            self._connection_history.record(config)
+            self._refresh_recent_menu()
+        except Exception:
+            pass
+
+    def _refresh_recent_menu(self):
+        self._recent_menu.clear()
+        entries = self._connection_history.recent()
+        if not entries:
+            no_item = self._recent_menu.addAction(I18N.connection_panel["no_recent_connections"])
+            no_item.setEnabled(False)
+            return
+        for entry in entries:
+            action = self._recent_menu.addAction(format_history_label(entry))
+            action.triggered.connect(lambda checked=False, e=entry: self._on_connect_from_history(e))
+        self._recent_menu.addSeparator()
+        clear_action = self._recent_menu.addAction(I18N.connection_panel["clear_history"])
+        clear_action.triggered.connect(self._on_clear_history)
+
+    def _on_clear_history(self):
+        answer = QMessageBox.question(
+            self,
+            I18N.main_window["validation_title"],
+            I18N.connection_panel["clear_history_confirm"],
+        )
+        if answer != QMessageBox.Yes:
+            return
+        self._connection_history.clear()
+        self._refresh_recent_menu()
 
     def _on_disconnect(self):
         self._connection_uc.disconnect()
@@ -540,12 +592,42 @@ class MainWindow(QMainWindow):
 
             self.sql_editor.add_to_history(sql_text)
 
-            results = []
+            stmt_flags = []
+            clean_statements = []
             for stmt in statements:
+                s = stmt.rstrip()
+                if s.upper().endswith(" EDIT"):
+                    stmt_flags.append(True)
+                    clean_statements.append(s[:-5].rstrip())
+                else:
+                    stmt_flags.append(False)
+                    clean_statements.append(s)
+
+            results = []
+            for stmt in clean_statements:
                 result = self._execution_uc.execute(stmt)
                 results.append(result)
 
-            self.result_panel.show_multi_results(results, sql_text)
+            single_idx = -1
+            if len(results) == 1:
+                single_idx = 0
+            elif len(results) > 1:
+                for i, (r, flag) in enumerate(zip(results, stmt_flags)):
+                    if flag and r.success and r.columns:
+                        single_idx = i
+                        break
+
+            if single_idx >= 0:
+                r = results[single_idx]
+                uses_edit = stmt_flags[single_idx]
+                self.result_panel.show_results(
+                    r.columns, r.rows,
+                    results[single_idx].message,
+                    editable=uses_edit,
+                    table_name="" if uses_edit else ""
+                )
+            else:
+                self.result_panel.show_multi_results(results, sql_text)
 
             success_count = sum(1 for r in results if r.success)
             total = len(results)

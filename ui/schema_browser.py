@@ -166,13 +166,13 @@ class SchemaBrowser(QWidget):
                     badges = []
                     if col.is_pk:
                         badges.append("PK")
-                    col_text += f"  ({col.data_type}"
+                    col_text += f"  ({self._format_column_type(col)}"
                     if badges:
                         col_text += f", {', '.join(badges)}"
                     col_text += ")"
                     col_item = QTreeWidgetItem([col_text])
                     col_item.setData(0, Qt.UserRole, col.name)
-                    col_item.setToolTip(0, f"{col.name} ({col.data_type})")
+                    col_item.setToolTip(0, f"{col.name} ({self._format_column_type(col)})")
                     col_item.setForeground(0, Qt.darkGray)
                     table_item.addChild(col_item)
 
@@ -211,6 +211,17 @@ class SchemaBrowser(QWidget):
                 return t
         return None
 
+    def _format_column_type(self, col) -> str:
+        type_with_size = col.data_type
+        if col.char_length is not None and col.char_length > 0 and col.data_type.upper() in ("VARCHAR", "CHAR", "NVARCHAR", "NCHAR", "VARBINARY", "RAW"):
+            type_with_size = f"{col.data_type}({col.char_length})"
+        elif col.precision is not None and col.precision > 0 and col.data_type.upper() in ("DECIMAL", "NUMERIC", "NUMBER", "FLOAT"):
+            if col.scale is not None and col.scale > 0:
+                type_with_size = f"{col.data_type}({col.precision},{col.scale})"
+            else:
+                type_with_size = f"{col.data_type}({col.precision})"
+        return type_with_size
+
     def _generate_create_table(self, table_info: TableInfo) -> str:
         lines = [f"CREATE TABLE {self._quote_identifier(table_info.name)} ("]
         col_lines = []
@@ -220,7 +231,7 @@ class SchemaBrowser(QWidget):
             nullable = " NOT NULL" if not col.nullable else ""
             if col.is_pk:
                 pk_cols.append(self._quote_identifier(col.name))
-            col_lines.append(f"    {self._quote_identifier(col.name)} {col.data_type}{nullable}")
+            col_lines.append(f"    {self._quote_identifier(col.name)} {self._format_column_type(col)}{nullable}")
 
         constraint_lines = []
         if pk_cols:
