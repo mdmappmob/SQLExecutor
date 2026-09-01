@@ -9,7 +9,7 @@
 ## STATUS ATUAL
 
 **Data:** 31/08/2026
-**Último commit relevante:** `b634d81` — undo/redo (Ctrl+Z) no editor SQL + teste e documentação
+**Último commit relevante:** `3b7180d` — remove logs e __pycache__ do versionamento
 **Fase atual:** Manutenção — Undo/Redo (Ctrl+Z) no editor SQL
 
 ### Concluído nesta versão
@@ -24,6 +24,7 @@
 - [x] **[CORREÇÃO]** Conexão: `port` agora é repassado ao conectar (`_on_connect_dialog`/`_auto_connect`/`_connect_with_config`) — antes a porta escolhida no diálogo (ex.: PostgreSQL) era ignorada na reconexão
 - [x] **[NOVO]** Undo/Redo (Ctrl+Z) no editor SQL: `_HistoryEditor.setPlainText()` sobrescrito via `QTextCursor` + `beginEditBlock`/`endEditBlock` — carregamentos programáticos (histórico, favoritos, abrir arquivo, formatar SQL) viram passos desfazíveis sem limpar a pilha de undo do Qt; tratamento explícito de `Ctrl+Z`, `Ctrl+Y` e `Ctrl+Shift+Z` no `keyPressEvent` + atalhos documentados na §13
 - [x] Resultados: altura das linhas da tabela reduzida para 90% do padrão (mínimo 16px)
+- [x] **[CHORE]** Removidos do versionamento: `logs/*.csv` (auditoria) e `__pycache__/*.pyc` — agora ignorados pelo `.gitignore`
 
 ### Em andamento
 - [ ] Testes de regressão nas outras bases (MSSQL, Firebird, MySQL, MariaDB, PostgreSQL, SQLite)
@@ -42,6 +43,22 @@
 - Histórico de bases conectadas sem senha (`ConnectionHistory`) + combo no diálogo de conexão + submenu "Conexões &Recentes" + fix do `port` na reconexão.
 
 **Validação:** `python tests.py` → `9 passed, 0 failed`.
+
+**Pendente:** testes de regressão nas demais bases (MSSQL, Firebird, MySQL, MariaDB, PostgreSQL, SQLite).
+
+**Próximo passo:** rodar a suíte de regressão nos outros dialetos e, se preciso, novo teste de performance do schema loading Oracle em volume maior.
+
+---
+
+## Encerramento do dia — 31/08/2026
+
+**Feito hoje:**
+- **[NOVO] Undo/Redo (Ctrl+Z) no editor SQL**: `setPlainText()` sobrescrito via `QTextCursor` + `beginEditBlock`/`endEditBlock` — carregamentos programáticos (histórico, favoritos, abrir arquivo, formatar SQL) viram passos desfazíveis sem limpar a pilha de undo do Qt; tratamento explícito de `Ctrl+Z`, `Ctrl+Y` e `Ctrl+Shift+Z` no `keyPressEvent`; atalhos documentados na §13.
+- **[TESTE]** `tests.py` ganhou `test_editor_undo` (offscreen): colagem por cima + desfazer/refazer, `setPlainText` desfazível e caso de documento vazio.
+- **[DIAGNÓSTICO]** SQL Oracle com `&VAR` (SQL*Plus): a ferramenta só reconhece `:nome`; datas `dd/mm/aaaa` viram `yyyyMMdd` e o adapter Oracle não define `NLS_DATE_FORMAT`. Recomendação: usar `:VAR` + `TO_DATE(..., 'YYYYMMDD')`. Nenhum código alterado.
+- **[CHORE]** `logs/*.csv` e `__pycache__/*.pyc` removidos do versionamento (git rm --cached) e push realizado.
+
+**Validação:** `python tests.py` → `10 passed, 0 failed`.
 
 **Pendente:** testes de regressão nas demais bases (MSSQL, Firebird, MySQL, MariaDB, PostgreSQL, SQLite).
 
