@@ -300,6 +300,56 @@ def test_connection_history():
     print("  connection_history (sem senha, dedupe, prune): OK")
 
 
+def test_editor_undo():
+    try:
+        import PySide6  # noqa
+    except ImportError:
+        print("  SKIP: PySide6 not installed")
+        return
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtTest import QTest
+    from PySide6.QtCore import Qt
+    from ui.sql_editor import _HistoryEditor
+
+    app = QApplication.instance() or QApplication([])
+
+    editor = _HistoryEditor()
+    editor.setPlainText("SELECT A;")
+    editor.selectAll()
+    app.clipboard().setText("SELECT B;")
+    QTest.keyClick(editor, Qt.Key_V, Qt.ControlModifier)
+    assert editor.toPlainText() == "SELECT B;", editor.toPlainText()
+    QTest.keyClick(editor, Qt.Key_Z, Qt.ControlModifier)
+    assert editor.toPlainText() == "SELECT A;", editor.toPlainText()
+    QTest.keyClick(editor, Qt.Key_Y, Qt.ControlModifier)
+    assert editor.toPlainText() == "SELECT B;", editor.toPlainText()
+    print("  undo/redo de colagem por cima: OK")
+
+    editor2 = _HistoryEditor()
+    editor2.setPlainText("X1;")
+    editor2.setPlainText("X2;")
+    QTest.keyClick(editor2, Qt.Key_Z, Qt.ControlModifier)
+    assert editor2.toPlainText() == "X1;", editor2.toPlainText()
+    QTest.keyClick(editor2, Qt.Key_Y, Qt.ControlModifier)
+    assert editor2.toPlainText() == "X2;", editor2.toPlainText()
+    print("  setPlainText desfazível (undo/redo): OK")
+
+    editor3 = _HistoryEditor()
+    editor3.setPlainText("")
+    assert editor3.toPlainText() == ""
+    editor3.setPlainText("ABC")
+    assert editor3.toPlainText() == "ABC"
+    QTest.keyClick(editor3, Qt.Key_Z, Qt.ControlModifier)
+    assert editor3.toPlainText() == "", editor3.toPlainText()
+    print("  setPlainText caso vazio: OK")
+
+    editor3.setPlainText("Ctrl+Shift+Z")
+    QTest.keyClick(editor3, Qt.Key_Z, Qt.ControlModifier | Qt.ShiftModifier)
+    assert editor3.toPlainText() == "Ctrl+Shift+Z", editor3.toPlainText()
+    print("  redo com Ctrl+Shift+Z: OK")
+
+
 if __name__ == "__main__":
     tests = [
         ("Value Objects", test_value_objects),
@@ -311,6 +361,7 @@ if __name__ == "__main__":
         ("UI Imports", test_ui_imports),
         ("format_sql", test_format_sql),
         ("Connection History", test_connection_history),
+        ("Editor Undo/Redo", test_editor_undo),
     ]
 
     passed = 0

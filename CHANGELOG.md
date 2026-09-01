@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-31 — Undo/Redo (Ctrl+Z) no editor SQL
+
+### `ui/sql_editor.py`
+- **`_HistoryEditor.setPlainText()`**: sobrescrito para aplicar o conteúdo via `QTextCursor` + `beginEditBlock`/`endEditBlock`. Carregamentos programáticos (histórico, favoritos, abrir arquivo, formatar SQL) agora são passos desfazíveis e **não limpam mais a pilha de undo** do Qt — antes, `setPlainText` destruía o histórico de desfazer.
+- **`_HistoryEditor.keyPressEvent()`**: tratamento explícito de **Ctrl+Z** (desfazer), **Ctrl+Y** e **Ctrl+Shift+Z** (refazer) no editor SQL.
+
+### `ui/result_panel.py`
+- **Altura das linhas**: reduzida para 90% do tamanho padrão (mínimo 16px) via `verticalHeader().setDefaultSectionSize()`, exibindo mais registros por página.
+
+### `tests.py`
+- Novo teste **`test_editor_undo`** (offscreen): colagem por cima + desfazer/refazer, `setPlainText` desfazível e caso de documento vazio. Suíte: `10 passed, 0 failed`.
+
 ## 2026-06-19 — Correção: célula vazia; alinhamento de números/moeda à direita
 
 ### `ui/result_panel.py`

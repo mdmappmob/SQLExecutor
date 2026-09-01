@@ -8,9 +8,9 @@
 
 ## STATUS ATUAL
 
-**Data:** 27/08/2026
-**Último commit relevante:** (working tree) — Histórico de conexões (recentes) sem senha + fix do port na reconexão
-**Fase atual:** Encerramento de sessão — 27/08/2026
+**Data:** 31/08/2026
+**Último commit relevante:** (working tree) — Undo/Redo (Ctrl+Z) no editor SQL
+**Fase atual:** Manutenção — Undo/Redo (Ctrl+Z) no editor SQL
 
 ### Concluído nesta versão
 - [x] Oracle adapter: detecção automática de colunas `COLLATION` e `IDENTITY_COLUMN` (Oracle 12c+ vs 11g)
@@ -22,6 +22,8 @@
 - [x] **[CORREÇÃO]** Formatador SQL (`format_sql`): removido `AS` de aliases de tabelas em FROM/JOIN (tabelas simples, derived tables/subqueries e VALUES) via Generator customizado do sqlglot, mantendo `AS` em aliases de coluna e CTE (substitui a abordagem anterior por regex)
 - [x] **[NOVO]** Histórico de bases conectadas (`ConnectionHistory` em `infrastructure/connection_history.py`): registra automaticamente toda conexão bem-sucedida (manual e auto-conexão) em `%APPDATA%\SQLExecutor\connections_history.json`, SEM armazenar a senha (whitelist de campos); dedupe case-insensitive por (db_type, server, database, username, use_windows_auth); ordena por `last_used` (UTC); mantém no máximo 10 entradas (prune); gravação atômica. Seleção via combo "Conexões recentes" no diálogo de conexão e via submenu "Conexões &Recentes" no menu Conexão (abre o diálogo pré-preenchido, senha em branco); ação "Limpar histórico" com confirmação
 - [x] **[CORREÇÃO]** Conexão: `port` agora é repassado ao conectar (`_on_connect_dialog`/`_auto_connect`/`_connect_with_config`) — antes a porta escolhida no diálogo (ex.: PostgreSQL) era ignorada na reconexão
+- [x] **[NOVO]** Undo/Redo (Ctrl+Z) no editor SQL: `_HistoryEditor.setPlainText()` sobrescrito via `QTextCursor` + `beginEditBlock`/`endEditBlock` — carregamentos programáticos (histórico, favoritos, abrir arquivo, formatar SQL) viram passos desfazíveis sem limpar a pilha de undo do Qt; tratamento explícito de `Ctrl+Z`, `Ctrl+Y` e `Ctrl+Shift+Z` no `keyPressEvent` + atalhos documentados na §13
+- [x] Resultados: altura das linhas da tabela reduzida para 90% do padrão (mínimo 16px)
 
 ### Em andamento
 - [ ] Testes de regressão nas outras bases (MSSQL, Firebird, MySQL, MariaDB, PostgreSQL, SQLite)
@@ -617,6 +619,8 @@ Os logs são acumulativos (append). Use o painel de **Histórico** para consulta
 | `Escape` | Cancelar / Fechar busca |
 | `Ctrl+F` | Abrir busca |
 | `Ctrl+H` | Abrir substituir |
+| `Ctrl+Z` | Desfazer |
+| `Ctrl+Y` | Refazer |
 | `F3` | Buscar próximo |
 | `Shift+F3` | Buscar anterior |
 

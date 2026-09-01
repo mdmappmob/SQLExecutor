@@ -376,7 +376,24 @@ class _HistoryEditor(QPlainTextEdit):
             new_cursor.setPosition(new_e if new_e >= new_s else new_s, QTextCursor.KeepAnchor)
             self.setTextCursor(new_cursor)
 
+    def setPlainText(self, text):
+        cursor = QTextCursor(self.document())
+        cursor.select(QTextCursor.Document)
+        cursor.beginEditBlock()
+        cursor.insertText(text)
+        cursor.endEditBlock()
+        self.setTextCursor(QTextCursor(self.document()))
+
     def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Z and event.modifiers() & Qt.ControlModifier:
+            if event.modifiers() & Qt.ShiftModifier:
+                self.redo()
+            else:
+                self.undo()
+            return
+        if event.key() == Qt.Key_Y and event.modifiers() & Qt.ControlModifier:
+            self.redo()
+            return
         if event.key() == Qt.Key_Tab:
             cursor = self.textCursor()
             if cursor.hasSelection():
