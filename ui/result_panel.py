@@ -238,6 +238,9 @@ class ResultPanel(QWidget):
                 border: 1px solid #ddd;
             }
         """)
+        header = self.table.verticalHeader()
+        current_height = header.defaultSectionSize()
+        header.setDefaultSectionSize(max(16, int(current_height * 0.9)))
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
