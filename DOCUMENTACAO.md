@@ -9,7 +9,7 @@
 ## STATUS ATUAL
 
 **Data:** 31/08/2026
-**Último commit relevante:** (working tree) — Undo/Redo (Ctrl+Z) no editor SQL
+**Último commit relevante:** `b634d81` — undo/redo (Ctrl+Z) no editor SQL + teste e documentação
 **Fase atual:** Manutenção — Undo/Redo (Ctrl+Z) no editor SQL
 
 ### Concluído nesta versão
