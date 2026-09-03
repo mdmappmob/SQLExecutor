@@ -9,7 +9,7 @@
 ## STATUS ATUAL
 
 **Data:** 03/09/2026
-**Último commit relevante:** `3b7180d` — remove logs e __pycache__ do versionamento
+**Último commit relevante:** `0d86ef7` — formatador SQL compacto + erro de instrução única exibido ao usuário
 **Fase atual:** Manutenção — Exibição de erro em instrução única
 
 ### Concluído nesta versão
