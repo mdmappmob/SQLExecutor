@@ -6,6 +6,11 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, Qt, QEvent, QPoint, QSize
 from PySide6.QtGui import QFont, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QTextDocument, QColor, QShortcut, QKeySequence, QIcon, QPixmap, QPolygon, QBrush, QPen, QPainter
 
+import sqlglot
+from sqlglot import exp
+from sqlglot.errors import ParseError
+from sqlglot.generator import Generator
+
 from infrastructure.i18n import I18N
 from ui.dialogs import show_critical
 
@@ -203,49 +208,545 @@ def strip_sql_comments(sql: str) -> str:
     return ''.join(result).strip()
 
 
+_SELECT_WRAP = 88
+_GROUP_WRAP = 130
+
+
+class _NoAsGenerator(Generator):
+    def table_sql(self, expression, sep=" "):
+        return super().table_sql(expression, sep=sep)
+
+    def subquery_sql(self, expression, sep=" "):
+        return super().subquery_sql(expression, sep=sep)
+
+    def values_sql(self, expression, values_as_table=True):
+        values_as_table = values_as_table and self.VALUES_AS_TABLE
+        if values_as_table or not expression.find_ancestor(exp.From, exp.Join):
+            args = self.expressions(expression)
+            alias = self.sql(expression, "alias")
+            values = f"VALUES{self.seg('')}{args}"
+            values = (
+                f"({values})"
+                if self.WRAP_DERIVED_VALUES
+                and (alias or isinstance(expression.parent, (exp.From, exp.Table)))
+                else values
+            )
+            values = self.query_modifiers(expression, values)
+            return f"{values} {alias}" if alias else values
+        return super().values_sql(expression, values_as_table=values_as_table)
+
+
+def _is_select(e):
+    return isinstance(e, exp.Select)
+
+
+def _unwrap_paren(e):
+    while isinstance(e, exp.Paren):
+        e = e.this
+    return e
+
+
+def _conjuncts(e):
+    out = []
+    stack = [_unwrap_paren(e)]
+    while stack:
+        c = stack.pop()
+        if isinstance(c, exp.And):
+            stack.append(_unwrap_paren(c.this))
+            if c.expression is not None:
+                stack.append(_unwrap_paren(c.expression))
+        else:
+            out.append(c)
+    out.reverse()
+    return out
+
+
+def _disjuncts(e):
+    out = []
+    stack = [_unwrap_paren(e)]
+    while stack:
+        c = stack.pop()
+        if isinstance(c, exp.Or):
+            stack.append(_unwrap_paren(c.this))
+            if c.expression is not None:
+                stack.append(_unwrap_paren(c.expression))
+        else:
+            out.append(c)
+    out.reverse()
+    return out
+
+
+def _join_keyword(j):
+    side = (j.args.get("side") or "").upper()
+    kind = (j.args.get("kind") or "").upper()
+    method = (j.args.get("method") or "").upper()
+    if method == "NATURAL":
+        return "NATURAL JOIN"
+    if method == "CROSS":
+        return "CROSS JOIN"
+    if side == "FULL":
+        return "FULL OUTER JOIN" if kind == "OUTER" else "FULL JOIN"
+    if side == "LEFT":
+        return "LEFT JOIN"
+    if side == "RIGHT":
+        return "RIGHT JOIN"
+    return "JOIN"
+
+
+def _alias_text(gen, sub):
+    a = sub.args.get("alias")
+    if a is None:
+        return ""
+    name = gen.sql(a.this) if a.this is not None else ""
+    cols = a.args.get("columns")
+    if cols:
+        coltxt = ", ".join(gen.sql(c) for c in cols)
+        return f"{name}({coltxt})"
+    return name
+
+
+def _pack(items, indent_col, width):
+    lines = []
+    cur = []
+    cur_len = indent_col
+    for i, it in enumerate(items):
+        sep = 0 if not cur else 2
+        if cur and cur_len + sep + len(it) + 1 > width:
+            lines.append(", ".join(cur) + ",")
+            cur = []
+            cur_len = indent_col
+            sep = 0
+        cur.append(it)
+        cur_len += sep + len(it)
+    if cur:
+        lines.append(", ".join(cur))
+    return lines
+
+
+def _pack_with_prefix(first_prefix, items, kw_col, width):
+    indent_col = kw_col + len(first_prefix) + 1
+    lines = _pack(items, indent_col, width)
+    first = " " * kw_col + first_prefix + " " + lines[0]
+    out = [first]
+    for ln in lines[1:]:
+        out.append(" " * indent_col + ln)
+    return out
+
+
+class _Unsupported(Exception):
+    pass
+
+
+class _CompactSQLGenerator(object):
+    def __init__(self):
+        self.g = _NoAsGenerator(pretty=False)
+
+    def fmt_stmt(self, node):
+        if isinstance(node, exp.Select):
+            if not self._supported_select(node):
+                return None
+            with_ = node.args.get("with_")
+            if with_ is not None:
+                lines = self._with_lines(with_)
+                if lines is None:
+                    return None
+                lines.extend(self.render_select(node, 0))
+                return lines
+            return self.render_select(node, 0)
+        if isinstance(node, (exp.Union, exp.Except, exp.Intersect)):
+            out = []
+            with_ = node.args.get("with_")
+            if with_ is not None:
+                wl = self._with_lines(with_)
+                if wl is None:
+                    return None
+                out.extend(wl)
+            body = self._set_lines(node)
+            if body is None:
+                return None
+            out.extend(body)
+            return out
+        return None
+
+    def _supported_select(self, sel):
+        allowed = {
+            "kind", "hint", "distinct", "top", "expressions", "limit", "exclude",
+            "operation_modifiers", "into", "from_", "joins", "where", "group",
+            "having", "qualify", "connect", "order", "lateral", "with_", "offset",
+            "prewhere", "match", "sample", "laterals", "for",
+        }
+        for k, v in sel.args.items():
+            if v is None or (isinstance(v, list) and not v):
+                continue
+            if k not in allowed:
+                return False
+        for k in ("into", "qualify", "connect", "lateral", "laterals", "prewhere", "sample", "match", "hint"):
+            if sel.args.get(k) is not None:
+                return False
+        if sel.args.get("operation_modifiers"):
+            return False
+        if sel.args.get("exclude") is not None:
+            return False
+        return True
+
+    def _collect_sets(self, node, acc):
+        if isinstance(node, exp.Select):
+            acc.append((node, None))
+            return
+        if isinstance(node, (exp.Union, exp.Except, exp.Intersect)):
+            self._collect_sets(node.this, acc)
+            if isinstance(node, exp.Union):
+                key = "UNION ALL" if node.args.get("distinct") is False else "UNION"
+            elif isinstance(node, exp.Except):
+                key = "EXCEPT ALL" if node.args.get("distinct") is False else "EXCEPT"
+            else:
+                key = "INTERSECT ALL" if node.args.get("distinct") is False else "INTERSECT"
+            acc.append((node.expression, key))
+            return
+        raise _Unsupported
+
+    def _set_lines(self, node):
+        pieces = []
+        self._collect_sets(node, pieces)
+        out = []
+        order = node.args.get("order")
+        for idx, (sel, opkw) in enumerate(pieces):
+            if opkw is not None:
+                out.append("")
+                out.append(opkw)
+                out.append("")
+            if not self._supported_select(sel):
+                return None
+            with_ = sel.args.get("with_")
+            if with_ is not None:
+                wl = self._with_lines(with_)
+                if wl is None:
+                    return None
+                out.extend(wl)
+            lines = self.render_select(sel, 0)
+            out.extend(lines)
+        if order is not None:
+            orditems = [self.g.sql(o) for o in order.expressions] if getattr(order, "expressions", None) else None
+            if orditems:
+                out.append(" ORDER BY " + ", ".join(orditems))
+            else:
+                out.append(" " + self.g.sql(order))
+        return out
+
+    def _with_lines(self, with_):
+        ctes = with_.expressions
+        head = "WITH RECURSIVE " if with_.args.get("recursive") else "WITH "
+        parts = []
+        for cte in ctes:
+            a = cte.args.get("alias")
+            name = self.g.sql(a.this) if a is not None and a.this is not None else self.g.sql(cte.this)
+            cols = a.args.get("columns") if a is not None else None
+            coltxt = ""
+            if cols:
+                coltxt = "(" + ", ".join(self.g.sql(c) for c in cols) + ")"
+            body = cte.this
+            if isinstance(body, exp.Subquery):
+                body = body.this
+            if isinstance(body, exp.Paren):
+                body = body.this
+            if not _is_select(body) and not isinstance(body, (exp.Union, exp.Except, exp.Intersect)):
+                parts.append(f"{name}{coltxt} AS ({self.g.sql(body)})")
+            else:
+                flat = self.g.sql(body)
+                if len(flat) <= 90:
+                    parts.append(f"{name}{coltxt} AS ({flat})")
+                else:
+                    parts.append(self._cte_block(name + coltxt, body))
+        if any(not isinstance(p, str) for p in parts):
+            return None
+        total = head + ", ".join(parts)
+        if len(total) <= _SELECT_WRAP + 40:
+            return [total]
+        lines = []
+        cur = head
+        for i, p in enumerate(parts):
+            cur += ("" if i == 0 else ", ") + p
+            if len(cur) > _SELECT_WRAP + 30 and i < len(parts) - 1:
+                lines.append(cur)
+                cur = " " * len(head)
+        if cur.strip():
+            lines.append(cur)
+        return lines
+
+    def _cte_block(self, name, body):
+        lines = self.render_block_after(f"{name} AS (", body, 0)
+        if lines is None:
+            return None
+        return "\n".join(lines)
+
+    def render_block_after(self, prefix, body, prefix_col):
+        if _is_select(body):
+            lines = self.render_select(body, prefix_col + len(prefix))
+            first = lines[0]
+            head = " " * prefix_col + prefix + first[prefix_col + len(prefix):]
+            out = [head]
+            out.extend(lines[1:])
+            out[-1] = out[-1] + ")"
+            return out
+        if isinstance(body, (exp.Union, exp.Except, exp.Intersect)):
+            sub = self._set_lines_embedded(body, prefix_col + len(prefix))
+            if sub is None:
+                return None
+            first = sub[0]
+            out = [" " * prefix_col + prefix + first[prefix_col + len(prefix):]]
+            out.extend(sub[1:])
+            out[-1] = out[-1] + ")"
+            return out
+        return None
+
+    def render_select(self, sel, s_col):
+        lines = self._select_header(sel, s_col)
+        frm = sel.args.get("from_")
+        joins = sel.args.get("joins") or []
+        where = sel.args.get("where")
+        group = sel.args.get("group")
+        having = sel.args.get("having")
+        order = sel.args.get("order")
+        limit = sel.args.get("limit")
+        offset = sel.args.get("offset")
+        if frm is not None:
+            r = self._from_lines(frm, s_col)
+            if r is None:
+                raise _Unsupported()
+            lines.extend(r)
+        for j in joins:
+            r = self._join_lines(j, s_col)
+            if r is None:
+                raise _Unsupported()
+            lines.extend(r)
+        if where is not None:
+            lines.extend(self._cond_lines("WHERE", where.this, s_col, s_col + 1, s_col + 3, pad_eq=True))
+        if group is not None:
+            lines.extend(self._group_lines(group, s_col))
+        if having is not None:
+            lines.extend(self._having_lines(having.this, s_col))
+        if order is not None:
+            lines.extend(self._order_lines(order, s_col))
+        if limit is not None:
+            lines.append(" " * (s_col + 1) + self.g.sql(limit))
+        if offset is not None:
+            lines.append(" " * (s_col + 1) + self.g.sql(offset))
+        return lines
+
+    def _select_header(self, sel, s_col):
+        prefix = "SELECT"
+        d = sel.args.get("distinct")
+        if d is not None:
+            prefix += " " + self.g.sql(d)
+        exprs = sel.args.get("expressions") or []
+        if not exprs:
+            return [" " * s_col + prefix]
+        items = []
+        for e in exprs:
+            t = self._item_text(e)
+            if t is None:
+                raise _Unsupported()
+            items.append(t)
+        return _pack_with_prefix(prefix, items, s_col, _SELECT_WRAP)
+
+    def _item_text(self, e):
+        if isinstance(e, exp.Alias):
+            inner = _unwrap_paren(e.this)
+            aname = e.args.get("alias")
+            if aname is not None and isinstance(inner, exp.Column):
+                colname = self.g.sql(inner)
+                aliasn = self.g.sql(aname)
+                if colname == aliasn or colname.endswith("." + aliasn):
+                    return colname
+            if isinstance(e.this, exp.Paren) and not isinstance(inner, (exp.Subquery, exp.Select)):
+                e2 = e.copy()
+                e2.set("this", inner)
+                return self.g.sql(e2)
+            return self.g.sql(e)
+        u = e
+        if isinstance(u, exp.Paren):
+            inner = u.this
+            if isinstance(inner, (exp.Subquery, exp.Select)):
+                return self.g.sql(u)
+            return self.g.sql(inner)
+        txt = self.g.sql(u)
+        if txt == "":
+            return None
+        return txt
+
+    def _from_lines(self, frm, s_col):
+        src = frm.this
+        indent = s_col + 2
+        if isinstance(src, exp.Table):
+            return [" " * indent + "FROM " + self.g.sql(src)]
+        if isinstance(src, exp.Subquery):
+            inner = src.this
+            if _is_select(inner):
+                sub_col = indent + len("FROM") + 2
+                lines = self.render_select(inner, sub_col)
+                first = lines[0]
+                out = [" " * indent + "FROM (" + first[sub_col:]]
+                out.extend(lines[1:])
+                out[-1] = out[-1] + ")" + self._sp_plus_alias(src)
+                return out
+            if isinstance(inner, (exp.Union, exp.Except, exp.Intersect)):
+                raise _Unsupported()
+            return [" " * indent + "FROM " + self.g.sql(src)]
+        if isinstance(src, exp.Values):
+            return [" " * indent + "FROM " + self.g.sql(src)]
+        raise _Unsupported()
+
+    def _sp_plus_alias(self, sub):
+        a = _alias_text(self.g, sub)
+        return (" " + a) if a else ""
+
+    def _join_lines(self, j, s_col):
+        kw = _join_keyword(j)
+        src = j.this
+        on = j.args.get("on")
+        indent = s_col + 2
+        if isinstance(src, exp.Table):
+            table_txt = self.g.sql(src)
+            base = " " * indent + kw + " " + table_txt
+            if on is None:
+                return [base]
+            conds = _conjuncts(on)
+            operand_col = len(base) + 4
+            return self._on_block_lines(base + " ON ", conds, operand_col)
+        if isinstance(src, exp.Subquery):
+            inner = src.this
+            if _is_select(inner):
+                paren_col = indent + len(kw) + 1
+                sub_col = paren_col + 1
+                lines = self.render_select(inner, sub_col)
+                first = lines[0]
+                out = [" " * indent + kw + " (" + first[sub_col:]]
+                out.extend(lines[1:])
+                out[-1] = out[-1] + ")" + self._sp_plus_alias(src)
+                if on is not None:
+                    conds = _conjuncts(on)
+                    out.extend(self._on_block_lines(None, conds, paren_col))
+                return out
+            if isinstance(inner, (exp.Union, exp.Except, exp.Intersect)):
+                raise _Unsupported()
+            flat = self.g.sql(inner)
+            alias = self._sp_plus_alias(src)
+            base = " " * indent + kw + " (" + flat + ")" + alias
+            if on is None:
+                return [base]
+            conds = _conjuncts(on)
+            operand_col = len(base) + 4
+            return self._on_block_lines(base + " ON ", conds, operand_col)
+        raise _Unsupported()
+
+    def _on_block_lines(self, base, conds, operand_col):
+        if len(conds) == 1:
+            if base is None:
+                return [" " * (operand_col - 3) + "ON " + self._single_cond_text(conds[0])]
+            return [base + self._single_cond_text(conds[0])]
+        texts = self._cond_texts(conds, operand_col, pad_eq=True)
+        if base is None:
+            out = [" " * (operand_col - 3) + "ON " + texts[0]]
+            for t in texts[1:]:
+                out.append(" " * (operand_col - 4) + "AND " + t)
+            return out
+        out = [base + texts[0]]
+        for t in texts[1:]:
+            out.append(" " * (operand_col - 4) + "AND " + t)
+        return out
+
+    def _single_cond_text(self, c):
+        if isinstance(c, exp.Paren) and isinstance(_unwrap_paren(c), exp.Or):
+            return self.g.sql(c)
+        return self.g.sql(_unwrap_paren(c))
+
+    def _cond_texts(self, conds, operand_col, pad_eq):
+        maxlen = 0
+        lengths = []
+        for c in conds:
+            u = _unwrap_paren(c)
+            if isinstance(u, exp.EQ) and not isinstance(_unwrap_paren(u.this), exp.Subquery) \
+                    and not isinstance(_unwrap_paren(u.expression), exp.Subquery):
+                lhs = self.g.sql(_unwrap_paren(u.this))
+                lengths.append(len(lhs))
+                maxlen = max(maxlen, len(lhs))
+            else:
+                lengths.append(None)
+        texts = []
+        for c, ln in zip(conds, lengths):
+            u = _unwrap_paren(c)
+            if ln is None:
+                texts.append(self.g.sql(c) if isinstance(c, (exp.Paren, exp.Or, exp.And)) else self.g.sql(u))
+            else:
+                lhs = self.g.sql(_unwrap_paren(u.this))
+                rhs = self.g.sql(_unwrap_paren(u.expression))
+                if maxlen > ln:
+                    lhs = lhs + " " * (maxlen - ln)
+                texts.append(f"{lhs} = {rhs}")
+        return texts
+
+    def _cond_lines(self, keyword, cond, s_col, kw_col, and_col, pad_eq=False):
+        conds = _conjuncts(cond)
+        operand_col = kw_col + len(keyword) + 1
+        texts = self._cond_texts(conds, operand_col, pad_eq)
+        out = [" " * kw_col + keyword + " " + texts[0]]
+        for t in texts[1:]:
+            out.append(" " * and_col + "AND " + t)
+        return out
+
+    def _group_lines(self, group, s_col):
+        kind = (group.args.get("kind") or "").upper()
+        if kind in ("CUBE", "ROLLUP", "GROUPING SETS"):
+            return [" " * (s_col + 1) + self.g.sql(group)]
+        items = [self.g.sql(e) for e in group.expressions]
+        if not items:
+            return []
+        return _pack_with_prefix("GROUP BY", items, s_col + 1, _GROUP_WRAP)
+
+    def _having_lines(self, cond, s_col):
+        conds = _disjuncts(cond)
+        texts = [self.g.sql(_unwrap_paren(c)) for c in conds]
+        out = [" " * s_col + "HAVING " + texts[0]]
+        for t in texts[1:]:
+            out.append(" " * (s_col + 4) + "OR " + t)
+        return out
+
+    def _order_lines(self, order, s_col):
+        if isinstance(order, exp.Order) and order.expressions:
+            items = [self.g.sql(o) for o in order.expressions]
+            return [" " * (s_col + 1) + "ORDER BY " + ", ".join(items)]
+        return [" " * (s_col + 1) + self.g.sql(order)]
+
+
+def _flat(node):
+    return _NoAsGenerator(pretty=False).sql(node)
+
+
 def format_sql(sql: str) -> str:
-    import sqlglot
-    from sqlglot.errors import ParseError
-
-    class _NoAsAliasGenerator(sqlglot.generator.Generator):
-        def table_sql(self, expression, sep=" "):
-            return super().table_sql(expression, sep=sep)
-
-        def subquery_sql(self, expression, sep=" "):
-            return super().subquery_sql(expression, sep=sep)
-
-        def values_sql(self, expression, values_as_table=True):
-            values_as_table = values_as_table and self.VALUES_AS_TABLE
-            if values_as_table or not expression.find_ancestor(
-                sqlglot.exp.From, sqlglot.exp.Join
-            ):
-                args = self.expressions(expression)
-                alias = self.sql(expression, "alias")
-                values = f"VALUES{self.seg('')}{args}"
-                values = (
-                    f"({values})"
-                    if self.WRAP_DERIVED_VALUES
-                    and (alias or isinstance(expression.parent, (sqlglot.exp.From, sqlglot.exp.Table)))
-                    else values
-                )
-                values = self.query_modifiers(expression, values)
-                return f"{values} {alias}" if alias else values
-            return super().values_sql(expression, values_as_table=values_as_table)
-
-    class _NoAsDialect(sqlglot.dialects.dialect.Dialect):
-        generator_class = _NoAsAliasGenerator
-
     try:
-        result = sqlglot.transpile(
-            sql,
-            write=_NoAsDialect,
-            pretty=True,
-            error_level=None,
-        )
-        if result:
-            return result[0].strip()
+        parsed = sqlglot.parse(sql)
+        if not parsed:
+            return sql
     except (ParseError, Exception):
-        pass
+        return sql
+
+    gen = _CompactSQLGenerator()
+    out_parts = []
+    for stmt in parsed:
+        try:
+            lines = gen.fmt_stmt(stmt)
+        except Exception:
+            lines = None
+        if lines is None:
+            out_parts.append(_flat(stmt))
+        else:
+            text = "\n".join(l.rstrip() for l in lines)
+            if text:
+                out_parts.append(text)
+    if len(out_parts) == 1:
+        return out_parts[0].strip()
+    if out_parts:
+        return "\n\n".join(p.strip() for p in out_parts)
     return sql
 
 

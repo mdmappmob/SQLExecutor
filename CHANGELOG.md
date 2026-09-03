@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-03 — Formatador SQL compacto + erro de instrução única visível
+
+### `ui/sql_editor.py`
+- **`format_sql()` reformulado**: novo layout compacto estilo TOAD/Oracle sobre o AST do sqlglot, substituindo o `pretty=True` (que quebrava quase tudo em linhas separadas). Colunas de `SELECT`/`GROUP BY` agrupadas por linha conforme largura (~3–5 itens), `CASE WHEN ... END` inline em uma linha, `JOIN`/`WHERE`/`HAVING` com condições em linhas próprias e alinhadas, blocos `UNION ALL` separados por linhas em branco. Mantidos: keywords em maiúsculas, remoção de `AS` em aliases de tabela/derived tables/`VALUES` (aliases de coluna e CTE seguem com `AS`) e fallback retornando o SQL original quando o parse falha.
+
+### `ui/main_window.py`
+- **`_on_execute()`**: instrução única que falha no banco agora exibe o erro via `result_panel.show_error()` (aba Mensagens selecionada, fundo vermelho). Antes caía em `show_results(columns=[], rows=[], message="Erro: ...")`, montando grade vazia e deixando a mensagem de erro invisível na aba "Mensagens" — impressão de "nenhum resultado e nenhum erro". Prefixo "Erro:" duplicado é removido antes de exibir.
+
+### `tests.py`
+- Suíte completa: `10 passed, 0 failed`.
+
 ## 2026-08-31 — Undo/Redo (Ctrl+Z) no editor SQL
 
 ### `ui/sql_editor.py`

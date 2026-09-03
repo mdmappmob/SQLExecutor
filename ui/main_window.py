@@ -620,12 +620,16 @@ class MainWindow(QMainWindow):
             if single_idx >= 0:
                 r = results[single_idx]
                 uses_edit = stmt_flags[single_idx]
-                self.result_panel.show_results(
-                    r.columns, r.rows,
-                    results[single_idx].message,
-                    editable=uses_edit,
-                    table_name="" if uses_edit else ""
-                )
+                if not r.success:
+                    clean_message = re.sub(r'^\s*erro\s*:\s*', '', r.message, flags=re.IGNORECASE)
+                    self.result_panel.show_error(clean_message)
+                else:
+                    self.result_panel.show_results(
+                        r.columns, r.rows,
+                        results[single_idx].message,
+                        editable=uses_edit,
+                        table_name="" if uses_edit else ""
+                    )
             else:
                 self.result_panel.show_multi_results(results, sql_text)
 

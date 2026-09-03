@@ -8,11 +8,13 @@
 
 ## STATUS ATUAL
 
-**Data:** 31/08/2026
+**Data:** 03/09/2026
 **Último commit relevante:** `3b7180d` — remove logs e __pycache__ do versionamento
-**Fase atual:** Manutenção — Undo/Redo (Ctrl+Z) no editor SQL
+**Fase atual:** Manutenção — Exibição de erro em instrução única
 
 ### Concluído nesta versão
+- [x] **[CORREÇÃO]** Execução de instrução única que falha no banco agora exibe a exception/erro claramente (`show_error`, aba Mensagens selecionada) em vez de mostrar grade vazia e esconder o erro — antes, `ExecutionResult(success=False)` caía em `show_results(columns=[], rows=[], msg)` e o erro ficava invisível na aba "Mensagens" (impressão de "nenhum resultado e nenhum erro"). Prefixo "Erro:" duplicado removido antes de exibir.
+- [x] **[NOVO]** Formatador SQL (`format_sql`) reformulado para o padrão compacto (estilo TOAD/Oracle): keywords em maiúsculas, colunas do SELECT/GROUP BY agrupadas por linha (~3-5 por linha conforme largura), `CASE WHEN ... END` inline em uma linha, condições de JOIN/WHERE/HAVING em linhas próprias com alinhamento, blocos `UNION ALL` separados por linha em branco — reduz drasticamente as quebras de linha; mantém a remoção de `AS` em aliases de tabela/derived tables/VALUES (aliases de coluna e CTE seguem com `AS`); fallback retorna o SQL original se o parse falhar. Layout próprio sobre o AST do sqlglot.
 - [x] Oracle adapter: detecção automática de colunas `COLLATION` e `IDENTITY_COLUMN` (Oracle 12c+ vs 11g)
 - [x] Oracle adapter: queries adaptativas com fallback para `NULL` / `0` quando colunas não existem
 - [x] Oracle adapter: otimização do `get_schema()` — consulta única de colunas (em vez de N queries por tabela)
@@ -57,6 +59,21 @@
 - **[TESTE]** `tests.py` ganhou `test_editor_undo` (offscreen): colagem por cima + desfazer/refazer, `setPlainText` desfazível e caso de documento vazio.
 - **[DIAGNÓSTICO]** SQL Oracle com `&VAR` (SQL*Plus): a ferramenta só reconhece `:nome`; datas `dd/mm/aaaa` viram `yyyyMMdd` e o adapter Oracle não define `NLS_DATE_FORMAT`. Recomendação: usar `:VAR` + `TO_DATE(..., 'YYYYMMDD')`. Nenhum código alterado.
 - **[CHORE]** `logs/*.csv` e `__pycache__/*.pyc` removidos do versionamento (git rm --cached) e push realizado.
+
+**Validação:** `python tests.py` → `10 passed, 0 failed`.
+
+**Pendente:** testes de regressão nas demais bases (MSSQL, Firebird, MySQL, MariaDB, PostgreSQL, SQLite).
+
+**Próximo passo:** rodar a suíte de regressão nos outros dialetos e, se preciso, novo teste de performance do schema loading Oracle em volume maior.
+
+---
+
+## Encerramento do dia — 03/09/2026
+
+**Feito hoje:**
+- **[NOVO] Formatador SQL compacto (`format_sql` em `ui/sql_editor.py`)**: novo layout estilo TOAD/Oracle com poucas quebras (colunas agrupadas por linha, CASE inline, cláusulas alinhadas), substituindo o `pretty=True` do sqlglot que quebrava quase tudo. Mantém uppercase, remoção de `AS` em aliases de tabela (não em colunas/CTE) e fallback para SQL original em erro de parse. Padrão validado pelo usuário com consulta de balancete contábil.
+- **[CORREÇÃO] Erro de instrução única agora visível (`ui/main_window.py`)**: quando a única instrução falha no banco, o app chama `result_panel.show_error(...)` (aba Mensagens selecionada, fundo vermelho) em vez de `show_results` com grade vazia que ocultava o erro na aba de mensagens.
+- **[DIAGNÓSTICO] Consulta de balancete contábil (Firebird/Oracle, contabilidade)**: executada no Oracle `192.168.11.150:1521/orcl` (wtsaojoao) com `cod_empresa=1`, `exercicio=2025`, `mesini=1`, `mesfim=1` — versão corrigida (`s.zeramento` no 3º bloco da UNION) **retorna 1064 linhas**; a versão original com `t1.zeramento` (alias inexistente naquele escopo) gera `ORA-00904: "T1"."ZERAMENTO": invalid identifier`. Esclarecido o comportamento: dados presentes ou exception — não há cenário de retorno vazio silencioso.
 
 **Validação:** `python tests.py` → `10 passed, 0 failed`.
 
